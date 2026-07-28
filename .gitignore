@@ -9,8 +9,10 @@ __pycache__/
 .coverage.*
 htmlcov/
 .mypy_cache/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
+.history/
 venv/
 .venv/
 *.pyc
@@ -21,9 +23,22 @@ venv/
 # Logs
 *.log
 
-# Cryptographic Keys
+# Cryptographic Keys & Keystores
 *.pem
 *.key
 *.cert
 *.pfx
 *.p12
+*.jks
+*.keystore
+key.properties
+local.properties
+
+# Firebase & Cloud Credentials
+google-services.json
+GoogleService-Info.plist
+serviceAccount*.json
+
+# Backups & Dumps
+*_backup*/
+*.bak
