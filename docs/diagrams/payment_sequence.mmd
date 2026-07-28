@@ -1,0 +1,93 @@
+sequenceDiagram
+    %% ============================================================
+    %% 7s TOMS — Payment Sequence
+    %% MPESA STK Push + Cash + Failure/Retry paths
+    %% BR-010, BR-011, BR-035
+    %% ============================================================
+
+    participant P as Passenger (Flutter)
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant R as Rider (Flutter)
+    participant D as Daraja API
+    participant FCM as Firebase Cloud Messaging
+
+    Note over P,D: === MPESA STK Push Path ===
+
+    P->>API: POST /api/v1/rides/{id}/payment/stk-push
+    API->>DB: Check payment_status != SUCCESS (BR-035)
+    API->>DB: Check MPESA retry count < 3 (BR-010)
+    API->>DB: Get passenger phone_number
+
+    API->>DB: INSERT payment_event (PAYMENT_ATTEMPT)
+    Note over DB: Trigger: sets payment_status = PENDING
+
+    API->>D: STK Push Request<br/>{phone, amount, ride_id as idempotency key}
+    D-->>API: 200 {CheckoutRequestID}
+    API-->>P: 200 {status: PENDING, message: "Check your phone"}
+
+    Note over P: Passenger enters M-PESA PIN on phone
+
+    rect rgb(240, 255, 240)
+        Note over D,API: Daraja Callback (async)
+        D->>API: POST /api/v1/webhooks/mpesa/callback<br/>{ResultCode: 0, MpesaReceiptNumber: ...}
+        Note over API: Validate: IP allowlist + payload shape (NFR §1)
+        API->>DB: INSERT payment_event (PAYMENT_SUCCESS,<br/>mpesa_receipt, raw_callback, amount)
+        Note over DB: Trigger: sets payment_status = SUCCESS<br/>locks actual_payment_method = MPESA
+    end
+
+    API->>FCM: Push → Passenger: "Payment confirmed: KES 200"
+    API-->>P: {payment_status: SUCCESS, mpesa_receipt}
+
+    Note over P,D: === MPESA Failure + Retry Path ===
+
+    rect rgb(255, 240, 240)
+        D->>API: POST /api/v1/webhooks/mpesa/callback<br/>{ResultCode: 1032, Description: "Cancelled by user"}
+        API->>DB: INSERT payment_event (PAYMENT_FAILED,<br/>raw_callback)
+        Note over DB: Trigger: sets payment_status = FAILED
+
+        P->>API: POST /api/v1/rides/{id}/payment/stk-push
+        Note over API: Retry attempt 2 of 3
+        API->>D: STK Push Request (same ride_id)
+    end
+
+    Note over P,D: === MPESA Timeout Path ===
+
+    rect rgb(255, 248, 230)
+        Note over API: 90s elapsed, no callback received
+        API->>D: Query STK Status (CheckoutRequestID)
+        D-->>API: {ResultCode: 1037, Description: "Timeout"}
+        API->>DB: INSERT payment_event (PAYMENT_FAILED,<br/>metadata={reason: "STK_TIMEOUT"})
+        Note over DB: Trigger: sets payment_status = FAILED
+
+        Note over P: Passenger sees: Retry / Switch to Cash
+    end
+
+    Note over P,D: === Cash Path ===
+
+    rect rgb(245, 245, 255)
+        Note over R: Ride completed, passenger pays cash
+        R->>API: POST /api/v1/rides/{id}/payment/cash-confirm<br/>{amount: 200}
+        API->>DB: INSERT payment_event (PAYMENT_SUCCESS,<br/>metadata={payment_method: "CASH"})
+        Note over DB: Trigger: sets payment_status = SUCCESS<br/>actual_payment_method = CASH
+        API-->>R: 200 {payment_status: SUCCESS}
+    end
+
+    Note over P,D: === Cash Dispute Path ===
+
+    rect rgb(255, 235, 235)
+        Note over R: Passenger refuses to pay
+        R->>API: POST /api/v1/rides/{id}/payment/dispute<br/>{reason: "CASH_REFUSED"}
+        API->>DB: INSERT payment_event (PAYMENT_DISPUTED)
+        Note over DB: Trigger: sets payment_status = DISPUTED
+        API->>FCM: Push → Owner: "Payment dispute on ride {id}"
+        Note over API: Owner resolves manually (BP-001)
+    end
+
+    Note over P,D: === Manual Refund Path ===
+
+    rect rgb(240, 255, 250)
+        Note over API: Owner refunds via personal MPESA app
+        API->>DB: INSERT payment_event (REFUND_RECORDED)
+        Note over DB: Trigger: sets refunded=true, refunded_at=now()<br/>payment_status stays SUCCESS (BR-010 CHECK)
+    end

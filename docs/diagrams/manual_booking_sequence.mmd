@@ -1,0 +1,87 @@
+sequenceDiagram
+    %% ============================================================
+    %% 7s TOMS — Manual Booking Sequence
+    %% REQUESTED → OWNER_REVIEWING → FARE_SENT → ... → COMPLETED
+    %% BR-005, BR-007, BR-008, BR-009, BR-029
+    %% ============================================================
+
+    participant P as Passenger (Flutter)
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant O as Owner (Flutter)
+    participant R as Rider (Flutter)
+    participant FCM as Firebase Cloud Messaging
+
+    P->>API: POST /api/v1/rides<br/>{pickup_lat/lng, destination_lat/lng, preferred_payment_method}
+    
+    Note over API: Booking Classification (BR-005)
+    API->>DB: Check passenger suspended?
+    DB-->>API: Not suspended
+    API->>DB: Check strike_count >= threshold?
+    DB-->>API: Below threshold
+    API->>DB: Match fare_templates(pickup, destination)?
+    DB-->>API: No template match (dropped pin or unknown route)
+
+    Note over API: Manual Booking → Owner Review Queue
+    API->>DB: INSERT ride (status=REQUESTED, booking_type=MANUAL)
+    API->>DB: INSERT ride_event (RIDE_REQUESTED)
+    API->>DB: INSERT ride_event (OWNER_REVIEWED)
+    Note over DB: Trigger: REQUESTED → OWNER_REVIEWING ✓
+
+    API->>FCM: Push → Owner: "New ride request — review needed"
+    API-->>P: 200 {ride_status: OWNER_REVIEWING, version: 2}
+
+    rect rgb(255, 248, 240)
+        Note over O: Owner has 3 min to respond (BR-007)<br/>Sees passenger rating + strike count
+        O->>API: PATCH /api/v1/rides/{id}/review<br/>{action: APPROVE, fare_amount: 350}
+    end
+
+    API->>DB: INSERT ride_event (FARE_SENT, metadata={fare: 350})
+    Note over DB: Trigger: OWNER_REVIEWING → FARE_SENT ✓
+    API->>DB: UPDATE rides SET fare_amount = 350
+
+    API->>FCM: Push → Passenger: "Fare ready: KES 350"
+    API-->>O: 200 {ride_status: FARE_SENT, fare_amount: 350, version: 3}
+
+    rect rgb(240, 255, 240)
+        Note over P: Passenger has 5 min to respond (BR-007)
+        P->>API: PATCH /api/v1/rides/{id}/fare-response<br/>{action: ACCEPT}
+    end
+
+    API->>DB: INSERT ride_event (FARE_ACCEPTED)
+    Note over DB: Trigger: FARE_SENT → FARE_ACCEPTED ✓
+    API-->>P: 200 {ride_status: FARE_ACCEPTED, version: 4}
+
+    Note over API: Owner assigns rider (2+ riders online → manual selection)
+    API->>DB: SELECT online riders WHERE is_online=true AND id_verified=true
+    DB-->>API: 3 riders online
+
+    O->>API: PATCH /api/v1/rides/{id}/assign<br/>{rider_id: "..."}
+    API->>DB: Check rider has no Active Ride (BR-026)
+    API->>DB: INSERT ride_event (RIDER_ASSIGNED, metadata={rider_id})
+    Note over DB: Trigger: FARE_ACCEPTED → RIDER_ASSIGNED ✓<br/>Sets rider_id, creates share_token
+
+    API->>FCM: Push → Rider: "New ride assigned"
+    API->>FCM: Push → Passenger: "Rider assigned: [name] [plate]"
+
+    rect rgb(240, 248, 255)
+        Note over R: Rider has 60s to respond (BR-008)
+        R->>API: PATCH /api/v1/rides/{id}/accept
+    end
+
+    API->>DB: INSERT ride_event (RIDER_ACCEPTED)
+    Note over DB: Trigger: RIDER_ASSIGNED → RIDER_EN_ROUTE ✓
+
+    R->>API: PATCH /api/v1/rides/{id}/arrive
+    API->>DB: INSERT ride_event (ARRIVED)
+    Note over DB: Trigger: RIDER_EN_ROUTE → ARRIVED ✓
+
+    R->>API: PATCH /api/v1/rides/{id}/start
+    API->>DB: INSERT ride_event (RIDE_STARTED)
+    Note over DB: Trigger: ARRIVED → IN_PROGRESS ✓
+
+    R->>API: PATCH /api/v1/rides/{id}/complete
+    API->>DB: INSERT ride_event (RIDE_COMPLETED)
+    Note over DB: Trigger: IN_PROGRESS → COMPLETED ✓ (terminal)
+
+    API-->>R: 200 {ride_status: COMPLETED, payment_status: PENDING}

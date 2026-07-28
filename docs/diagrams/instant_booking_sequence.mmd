@@ -1,0 +1,66 @@
+sequenceDiagram
+    %% ============================================================
+    %% 7s TOMS — Instant Booking Sequence
+    %% REQUESTED → RIDER_ASSIGNED (fare template matched)
+    %% BR-005, BR-009, BR-029
+    %% ============================================================
+
+    participant P as Passenger (Flutter)
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant FCM as Firebase Cloud Messaging
+
+    P->>API: POST /api/v1/rides<br/>{pickup_place_id, destination_place_id, preferred_payment_method}
+    
+    Note over API: Booking Classification (BR-005)
+    API->>DB: Check passenger suspended?
+    DB-->>API: Not suspended
+    API->>DB: Check strike_count >= threshold?
+    DB-->>API: Below threshold
+    API->>DB: Match fare_templates(from, to)?
+    DB-->>API: Template found: fare=KES 200
+
+    Note over API: Instant Booking path
+    API->>DB: INSERT ride (status=REQUESTED, booking_type=INSTANT, fare_amount=200)
+    API->>DB: INSERT ride_event (RIDE_REQUESTED)
+    Note over DB: Trigger validates REQUESTED is valid initial state
+
+    Note over API: Auto-assign (single rider online)
+    API->>DB: SELECT online riders
+    DB-->>API: 1 rider online (id_verified=true)
+    API->>DB: INSERT ride_event (RIDER_ASSIGNED, metadata={rider_id})
+    Note over DB: Trigger: REQUESTED → RIDER_ASSIGNED ✓ (Instant Booking path)<br/>Sets rides.status=RIDER_ASSIGNED<br/>Sets rides.rider_id<br/>Creates share_token
+
+    API-->>P: 200 {ride_status: RIDER_ASSIGNED, rider_name, plate, share_token, version: 3}
+    API->>FCM: Push → Rider: "New ride assigned"
+    API->>FCM: Push → Passenger: "Rider assigned: [name] [plate]"
+
+    Note over P: Passenger sees rider info + tracking
+
+    P->>API: GET /api/v1/rides/{id}
+    API-->>P: {status: RIDER_ASSIGNED, rider_lat/lng, ETA}
+
+    Note over API: Rider accepts assignment
+    rect rgb(240, 248, 255)
+        Note right of API: Rider has 60s to respond (BR-008)
+        API->>DB: INSERT ride_event (RIDER_ACCEPTED)
+        Note over DB: Trigger: RIDER_ASSIGNED → RIDER_EN_ROUTE ✓
+    end
+
+    API->>FCM: Push → Passenger: "Rider is on the way"
+
+    Note over API: Rider arrives at pickup
+    API->>DB: INSERT ride_event (ARRIVED)
+    Note over DB: Trigger: RIDER_EN_ROUTE → ARRIVED ✓
+    API->>FCM: Push → Passenger: "Rider has arrived"
+
+    Note over API: Rider starts ride (explicit tap — never GPS inferred)
+    API->>DB: INSERT ride_event (RIDE_STARTED)
+    Note over DB: Trigger: ARRIVED → IN_PROGRESS ✓
+
+    Note over API: Ride reaches destination
+    API->>DB: INSERT ride_event (RIDE_COMPLETED)
+    Note over DB: Trigger: IN_PROGRESS → COMPLETED ✓ (terminal)
+    Note over DB: share_token_active → false
+
+    API-->>P: 200 {ride_status: COMPLETED, payment_status: PENDING}

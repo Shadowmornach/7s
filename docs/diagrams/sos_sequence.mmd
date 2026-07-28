@@ -1,0 +1,63 @@
+sequenceDiagram
+    %% ============================================================
+    %% 7s TOMS — SOS Sequence
+    %% Trigger → Confirm → Alert → Owner Response → Resolve
+    %% BR-012, BP-009, BP-010
+    %% ============================================================
+
+    participant U as Passenger/Rider (Flutter)
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant O as Owner (Flutter)
+    participant FCM as Firebase Cloud Messaging
+
+    Note over U: SOS available from RIDER_ASSIGNED through payment resolution (BR-012)
+
+    U->>U: Tap persistent SOS button
+    U->>U: Confirmation dialog: "Are you sure?"
+    U->>U: Select emergency type:<br/>Robbery | Medical | Accident |<br/>Harassment | Vehicle Breakdown | Other
+
+    U->>API: POST /api/v1/sos<br/>{ride_id, emergency_type, lat, lng}
+
+    Note over API: No rate limiting on SOS — ever (BR-012, NFR §2)
+
+    API->>DB: INSERT sos_alerts<br/>(ride_id, triggered_by, lat, lng,<br/>severity=mapped_from_type, emergency_type,<br/>status='ACTIVE')
+
+    API->>DB: INSERT ride_event (SOS_TRIGGERED,<br/>metadata={sos_alert_id, emergency_type})
+
+    API-->>U: 200 {sos_id, status: ACTIVE}
+
+    rect rgb(255, 230, 230)
+        Note over FCM: HIGH PRIORITY — loud/foreground alert
+        API->>FCM: Push → Owner:<br/>"🚨 SOS ALERT: [type]<br/>Ride #{id} — [passenger/rider name]<br/>[GPS coordinates]"
+        Note over O: Persistent notification — cannot be silently dismissed
+    end
+
+    Note over O: Owner sees priority queue:<br/>CRITICAL > HIGH > MEDIUM > LOW<br/>then oldest-first within same severity
+
+    alt Owner calls the person
+        O->>O: Tap "Call" → opens phone dialer
+    else Owner navigates to location
+        O->>O: Tap "Navigate" → opens maps app<br/>with SOS GPS coordinates
+    end
+
+    Note over O: Owner resolves the situation
+
+    O->>API: PATCH /api/v1/sos/{id}/resolve<br/>{resolution_notes: "Called passenger, rider had flat tire. Replacement sent."}
+
+    API->>DB: UPDATE sos_alerts SET<br/>status='RESOLVED',<br/>resolved_at=now(),<br/>resolved_by=owner_id
+
+    API->>DB: INSERT ride_event (SOS_RESOLVED,<br/>metadata={sos_alert_id, resolution_notes})
+
+    API-->>O: 200 {status: RESOLVED}
+
+    Note over U,O: === Owner-Triggered SOS (owner riding) ===
+
+    rect rgb(255, 248, 230)
+        Note over O: Owner is riding as Rider and presses SOS
+        O->>API: POST /api/v1/sos<br/>{ride_id, emergency_type, lat, lng}
+        API->>DB: INSERT sos_alerts (status='ACTIVE')
+        API->>DB: INSERT ride_event (SOS_TRIGGERED)
+        Note over API: No notification chain — owner IS the notification target<br/>Event logged for after-the-fact record only (BP-010)
+        API-->>O: 200 {sos_id, status: ACTIVE}
+    end

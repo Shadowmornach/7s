@@ -1,0 +1,205 @@
+erDiagram
+    %% ============================================================
+    %% 7s TOMS — Entity Relationship Diagram
+    %% Canonical source. Derived from Document 4 §3.
+    %% ============================================================
+
+    users {
+        uuid id PK
+        varchar phone_number UK "NOT NULL, UNIQUE"
+        role role "NOT NULL — OWNER, RIDER, PASSENGER"
+        varchar full_name "NOT NULL"
+        varchar photo_url
+        timestamptz created_at "NOT NULL, DEFAULT now()"
+        boolean is_active "NOT NULL, DEFAULT true"
+    }
+
+    riders {
+        uuid id PK,FK "→ users.id"
+        varchar motorcycle_plate "NOT NULL"
+        varchar motorcycle_model
+        varchar license_number
+        boolean id_verified "NOT NULL, DEFAULT false"
+        varchar status "online / offline"
+        decimal current_lat
+        decimal current_lng
+        timestamptz last_location_at
+        integer strike_count "NOT NULL, DEFAULT 0"
+    }
+
+    passengers {
+        uuid id PK,FK "→ users.id"
+        integer strike_count "NOT NULL, DEFAULT 0"
+    }
+
+    places {
+        uuid id PK
+        varchar name "NOT NULL"
+        decimal latitude "NOT NULL"
+        decimal longitude "NOT NULL"
+        place_type place_type "NOT NULL — SYSTEM, OWNER, USER"
+        place_origin origin "NOT NULL — MANUAL, GOOGLE, OSM, GPS"
+        uuid created_by FK "→ users.id"
+        integer usage_count "NOT NULL, DEFAULT 0"
+        boolean active "NOT NULL, DEFAULT true"
+    }
+
+    fare_templates {
+        uuid id PK
+        uuid from_place_id FK "→ places.id, NOT NULL"
+        uuid to_place_id FK "→ places.id, NOT NULL"
+        decimal fare "NOT NULL"
+        decimal estimated_distance
+        integer estimated_time "seconds"
+        boolean active "NOT NULL, DEFAULT true"
+        timestamptz last_updated
+        text notes
+    }
+
+    rides {
+        uuid id PK
+        uuid passenger_id FK "→ users.id, NOT NULL"
+        uuid rider_id FK "→ users.id, NULLABLE"
+        decimal pickup_lat "NOT NULL"
+        decimal pickup_lng "NOT NULL"
+        decimal destination_lat "NOT NULL"
+        decimal destination_lng "NOT NULL"
+        uuid pickup_place_id FK "→ places.id, NULLABLE"
+        uuid destination_place_id FK "→ places.id, NULLABLE"
+        ride_status status "NOT NULL, DEFAULT REQUESTED"
+        cancelled_by cancelled_by "NULLABLE"
+        cancel_reason cancel_reason "NULLABLE"
+        booking_type booking_type "NOT NULL"
+        payment_status payment_status "NOT NULL, DEFAULT PENDING"
+        boolean refunded "NOT NULL, DEFAULT false"
+        timestamptz refunded_at "NULLABLE"
+        uuid payment_account_id FK "→ payment_accounts.id, NULLABLE"
+        varchar preferred_payment_method
+        varchar actual_payment_method
+        boolean payment_method_changed "DEFAULT false"
+        text payment_change_reason
+        varchar share_token UK "NULLABLE, UNIQUE"
+        boolean share_token_active "DEFAULT false"
+        timestamptz share_token_expired_at
+        decimal fare_amount
+        timestamptz requested_at "NOT NULL"
+        timestamptz owner_reviewed_at
+        timestamptz fare_sent_at
+        timestamptz fare_accepted_at
+        timestamptz rider_assigned_at
+        timestamptz rider_en_route_at
+        timestamptz arrived_at
+        timestamptz in_progress_at
+        timestamptz completed_at
+        timestamptz cancelled_at
+        integer version "NOT NULL, DEFAULT 1 — optimistic concurrency"
+    }
+
+    ride_events {
+        uuid id PK
+        uuid ride_id FK "→ rides.id, NOT NULL"
+        ride_event_type ride_event_type "NOT NULL"
+        uuid actor_id FK "→ users.id, NOT NULL"
+        decimal lat
+        decimal lng
+        jsonb metadata "append-only, schema-flexible"
+        bigserial sequence_number "monotonic — BR-022"
+        timestamptz created_at "NOT NULL, DEFAULT now()"
+    }
+
+    payment_events {
+        uuid id PK
+        uuid ride_id FK "→ rides.id, NOT NULL"
+        payment_event_type payment_event_type "NOT NULL"
+        varchar status
+        varchar mpesa_receipt
+        jsonb raw_callback "full Daraja response"
+        varchar phone_number_used "override number if any"
+        bigserial sequence_number "monotonic — BR-022"
+        timestamptz created_at "NOT NULL, DEFAULT now()"
+    }
+
+    sos_alerts {
+        uuid id PK
+        uuid ride_id FK "→ rides.id, NOT NULL"
+        uuid triggered_by FK "→ users.id, NOT NULL"
+        decimal lat "NOT NULL"
+        decimal lng "NOT NULL"
+        sos_severity severity "NOT NULL"
+        varchar emergency_type "NOT NULL"
+        varchar status "ACTIVE / RESOLVED"
+        text resolution_notes
+        timestamptz created_at "NOT NULL, DEFAULT now()"
+        timestamptz resolved_at
+    }
+
+    cash_handovers {
+        uuid id PK
+        uuid rider_id FK "→ users.id, NOT NULL"
+        decimal expected_cash "NOT NULL"
+        decimal actual_cash "NOT NULL"
+        decimal difference "NOT NULL — computed"
+        uuid received_by FK "→ users.id, NOT NULL"
+        timestamptz created_at "NOT NULL, DEFAULT now()"
+    }
+
+    ratings {
+        uuid id PK
+        uuid ride_id FK "→ rides.id, NOT NULL"
+        uuid rated_by FK "→ users.id, NOT NULL"
+        uuid rated_user FK "→ users.id, NOT NULL"
+        integer score "1-5, NOT NULL"
+        text comment
+        timestamptz created_at "NOT NULL, DEFAULT now()"
+    }
+
+    payment_accounts {
+        uuid id PK
+        varchar provider "NOT NULL — MPESA_TILL, MPESA_PAYBILL, MPESA_PERSONAL"
+        varchar display_name "NOT NULL — shown to passengers"
+        varchar till_paybill_or_number "NOT NULL"
+        boolean is_default "NOT NULL, DEFAULT false"
+        varchar status "NOT NULL — active, inactive"
+        timestamptz created_at "NOT NULL, DEFAULT now()"
+    }
+
+    configuration {
+        varchar key PK
+        varchar value "NOT NULL"
+        timestamptz updated_at "NOT NULL, DEFAULT now()"
+        uuid updated_by FK "→ users.id"
+    }
+
+    %% ============================================================
+    %% Relationships
+    %% ============================================================
+
+    users ||--o| riders : "extends"
+    users ||--o| passengers : "extends"
+
+    users ||--o{ places : "created_by"
+    places ||--o{ fare_templates : "from_place_id"
+    places ||--o{ fare_templates : "to_place_id"
+
+    users ||--o{ rides : "passenger_id"
+    users ||--o{ rides : "rider_id"
+    places ||--o{ rides : "pickup_place_id"
+    places ||--o{ rides : "destination_place_id"
+    payment_accounts ||--o{ rides : "payment_account_id"
+
+    rides ||--o{ ride_events : "ride_id"
+    users ||--o{ ride_events : "actor_id"
+
+    rides ||--o{ payment_events : "ride_id"
+
+    rides ||--o{ sos_alerts : "ride_id"
+    users ||--o{ sos_alerts : "triggered_by"
+
+    users ||--o{ cash_handovers : "rider_id"
+    users ||--o{ cash_handovers : "received_by"
+
+    rides ||--o{ ratings : "ride_id"
+    users ||--o{ ratings : "rated_by"
+    users ||--o{ ratings : "rated_user"
+
+    users ||--o{ configuration : "updated_by"

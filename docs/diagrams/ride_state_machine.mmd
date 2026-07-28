@@ -1,0 +1,50 @@
+stateDiagram-v2
+    %% ============================================================
+    %% 7s TOMS — Ride State Machine
+    %% Canonical source. Derived from BR-029 state graph.
+    %% ============================================================
+
+    [*] --> REQUESTED
+
+    %% === Manual / Restricted Booking Path ===
+    REQUESTED --> OWNER_REVIEWING : OWNER_REVIEWED event<br/>(Manual / Restricted)
+    OWNER_REVIEWING --> FARE_SENT : FARE_SENT event
+    FARE_SENT --> FARE_ACCEPTED : FARE_ACCEPTED event
+    FARE_ACCEPTED --> RIDER_ASSIGNED : RIDER_ASSIGNED event
+
+    %% === Instant Booking Path ===
+    REQUESTED --> RIDER_ASSIGNED : RIDER_ASSIGNED event<br/>(Instant Booking)
+
+    %% === Common path after assignment ===
+    RIDER_ASSIGNED --> RIDER_EN_ROUTE : RIDER_ACCEPTED event
+    RIDER_EN_ROUTE --> ARRIVED : ARRIVED event
+    ARRIVED --> IN_PROGRESS : RIDE_STARTED event
+    IN_PROGRESS --> COMPLETED : RIDE_COMPLETED event
+
+    %% === Terminal states ===
+    COMPLETED --> [*]
+    CANCELLED --> [*]
+
+    %% === Cancellation from any active state ===
+    REQUESTED --> CANCELLED : RIDE_CANCELLED event
+    OWNER_REVIEWING --> CANCELLED : RIDE_CANCELLED event
+    FARE_SENT --> CANCELLED : RIDE_CANCELLED event
+    FARE_ACCEPTED --> CANCELLED : RIDE_CANCELLED event
+    RIDER_ASSIGNED --> CANCELLED : RIDE_CANCELLED event
+    RIDER_EN_ROUTE --> CANCELLED : RIDE_CANCELLED event
+    ARRIVED --> CANCELLED : RIDE_CANCELLED event
+    IN_PROGRESS --> CANCELLED : RIDE_CANCELLED event
+
+    %% === State classifications ===
+    state COMPLETED {
+        direction LR
+        [*] --> terminal
+    }
+    state CANCELLED {
+        direction LR
+        [*] --> terminal_with_metadata
+        note right of terminal_with_metadata
+            cancelled_by: OWNER|PASSENGER|RIDER|SYSTEM
+            cancel_reason: fixed enum (BR-020)
+        end note
+    }

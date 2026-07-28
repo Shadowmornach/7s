@@ -1,0 +1,29 @@
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+__pycache__/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.vscode/
+.idea/
+venv/
+.venv/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+
+# Logs
+*.log
+
+# Cryptographic Keys
+*.pem
+*.key
+*.cert
+*.pfx
+*.p12
