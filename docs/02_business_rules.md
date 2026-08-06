@@ -8,16 +8,17 @@ Numbers marked **[DEFAULT — confirm]** are reasonable starting values, not val
 ---
 
 ### BR-001 — Passenger Registration
-- A passenger account must have a unique phone number; one phone number cannot belong to multiple accounts.
-- Phone number must be verified via SMS OTP before the account is active.
-- OTP expires after **5 minutes [DEFAULT — confirm]**.
-- Maximum OTP verification attempts: **5 [DEFAULT — confirm]**; maximum OTP resend requests: **3 per hour [DEFAULT — confirm]**, with a **60-second** cooldown between resends.
-- Account remains inactive until verification succeeds.
+- Self-service registration is supported via Google Sign-In (server-verified OAuth ID token) or Email and Password.
+- Email address must be unique across accounts. Self-service signup is strictly restricted to the `PASSENGER` role (Rider and Owner accounts require administrative provisioning via `/auth/provision`).
+- Phone number is **optional** at registration and profile completion. Cash-only users are never prompted for a phone number.
+- Phone number is collected conditionally **only when a passenger selects M-Pesa** as their payment method for the first time, and is saved to their user profile for future M-Pesa payments (DL-026).
 
 ### BR-002 — Authentication
-- Login OTP only — no per-ride OTP (decided).
-- Authentication tokens are issued by the authentication provider; the backend trusts only validated tokens and never client-supplied role information.
-- Role (`owner` / `rider` / `passenger`) is a server-side claim, never inferred client-side.
+- Primary authentication methods: Google Sign-In (ID token server-validated via Google OAuth2) and Email/Password with JWT session tokens (access and refresh tokens).
+- Authentication tokens are issued by the backend service; the API trusts only validated JWT tokens and server-verified OAuth identity assertions, never client-supplied role information.
+- Role (`OWNER` / `RIDER` / `PASSENGER`) is a server-side claim embedded in the JWT token payload, never inferred client-side.
+- No per-ride OTP is required (decided).
+
 
 ### BR-003 — Rider Verification & Online Status
 - A rider may go online only if: account is active, `id_verified = true`, and rider is not suspended.
@@ -126,8 +127,8 @@ All timeout and threshold values are owner-adjustable via Configuration at runti
 
 | Timeout | Default |
 |---|---|
-| OTP expiry | 5 min |
-| OTP resend cooldown | 60 sec |
+| Email OTP expiry | 10 min |
+| Email OTP cooldown | 60 sec |
 | Owner review window | 3 min |
 | Fare response window | 5 min |
 | Rider accept/reject window | 60 sec |

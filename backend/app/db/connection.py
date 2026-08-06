@@ -8,16 +8,19 @@ class Database:
 
     async def connect(self):
         if not self.pool:
-            self.pool = await asyncpg.create_pool(dsn=settings.DATABASE_URL.get_secret_value())
+            self.pool = await asyncpg.create_pool(
+                dsn=settings.DATABASE_URL.get_secret_value(),
+                statement_cache_size=0
+            )
 
     async def disconnect(self):
         if self.pool:
             await self.pool.close()
             self.pool = None
 
-    async def get_connection(self) -> asyncpg.Connection:
+    def get_connection(self):
         if not self.pool:
-            await self.connect()
+            raise RuntimeError("Database pool is not connected. Call await db.connect() first.")
         return self.pool.acquire()
 
 db = Database()

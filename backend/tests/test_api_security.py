@@ -25,7 +25,7 @@ def test_validation_error_sanitization():
     # Send a request missing required fields to trigger validation error
     response = client.post(
         "/auth/login",
-        json={} # Missing phone_number and otp
+        json={} # Missing email and password
     )
     
     assert response.status_code == 422
@@ -35,7 +35,7 @@ def test_validation_error_sanitization():
     assert "ctx" not in data["errors"][0]
     assert "type" not in data["errors"][0]
     assert "input" not in data["errors"][0]
-    assert data["errors"][0]["field"] == "body.phone_number"
+    assert data["errors"][0]["field"] == "body.email"
 
 @pytest.mark.asyncio
 async def test_rate_limiter_bounded_memory():

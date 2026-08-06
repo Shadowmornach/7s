@@ -3,9 +3,12 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../providers/onboarding_provider.dart';
 import '../../domain/models/onboarding_page_item.dart';
+import '../../../../core/widgets/app_button.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_typography.dart';
 
+/// Redesigned Onboarding Carousel with custom pill indicators,
+/// hero icon badges, and AppButton action controllers.
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
 
@@ -27,7 +30,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       title: 'Real-Time Live Tracking',
       description: 'Watch your driver approach on the map in real time with accurate arrival times.',
       icon: Icons.map_rounded,
-      accentColor: AppColors.accent,
+      accentColor: AppColors.primary,
     ),
     OnboardingPageItem(
       title: 'Instant Emergency SOS',
@@ -39,13 +42,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       title: 'Share Your Trip Live',
       description: 'Send a secure public link to family and friends so they can follow your trip in real time.',
       icon: Icons.share_rounded,
-      accentColor: Colors.teal,
+      accentColor: AppColors.primary,
     ),
     OnboardingPageItem(
       title: 'Cash & Secure M-Pesa',
       description: 'Pay seamlessly with Cash or instant M-Pesa Daraja STK push notifications.',
       icon: Icons.account_balance_wallet_rounded,
-      accentColor: Colors.indigo,
+      accentColor: AppColors.primary,
     ),
   ];
 
@@ -66,11 +69,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         actions: [
           TextButton(
             onPressed: () => _finishOnboarding(context),
-            child: const Text('SKIP', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(
+              'SKIP',
+              style: AppTypography.labelMedium.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+              ),
+            ),
           ),
         ],
       ),
@@ -87,30 +99,33 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 itemBuilder: (context, index) {
                   final item = _pages[index];
                   return Padding(
-                    padding: const EdgeInsets.all(32.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 16.0),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Container(
-                          width: 120,
-                          height: 120,
+                          width: 140,
+                          height: 140,
                           decoration: BoxDecoration(
-                            color: item.accentColor.withValues(alpha: 0.1),
+                            color: item.accentColor.withValues(alpha: 0.12),
                             shape: BoxShape.circle,
                           ),
-                          child: Icon(item.icon, size: 64, color: item.accentColor),
+                          child: Icon(item.icon, size: 70, color: item.accentColor),
                         ),
-                        const SizedBox(height: 32),
+                        const SizedBox(height: 36),
                         Text(
                           item.title,
                           textAlign: TextAlign.center,
-                          style: AppTypography.headline,
+                          style: AppTypography.displayLarge.copyWith(fontSize: 26),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 14),
                         Text(
                           item.description,
                           textAlign: TextAlign.center,
-                          style: AppTypography.caption,
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: AppColors.textSecondary,
+                            height: 1.5,
+                          ),
                         ),
                       ],
                     ),
@@ -122,7 +137,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               builder: (context, provider, child) {
                 final isLast = provider.currentPageIndex == _pages.length - 1;
                 return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
                   child: Column(
                     children: [
                       Row(
@@ -130,42 +145,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         children: List.generate(
                           _pages.length,
                           (i) => AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
+                            duration: const Duration(milliseconds: 250),
                             margin: const EdgeInsets.symmetric(horizontal: 4),
-                            width: provider.currentPageIndex == i ? 24 : 8,
+                            width: provider.currentPageIndex == i ? 28 : 8,
                             height: 8,
                             decoration: BoxDecoration(
-                              color: provider.currentPageIndex == i ? AppColors.primary : Colors.grey.shade300,
+                              color: provider.currentPageIndex == i ? AppColors.primary : AppColors.border,
                               borderRadius: BorderRadius.circular(4),
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          onPressed: () {
-                            if (isLast) {
-                              _finishOnboarding(context);
-                            } else {
-                              _pageController.nextPage(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeInOut,
-                              );
-                            }
-                          },
-                          child: Text(
-                            isLast ? 'GET STARTED' : 'NEXT',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                        ),
+                      const SizedBox(height: 28),
+                      AppButton(
+                        text: isLast ? 'GET STARTED' : 'NEXT',
+                        suffixIcon: isLast ? Icons.rocket_launch_rounded : Icons.arrow_forward_rounded,
+                        onPressed: () {
+                          if (isLast) {
+                            _finishOnboarding(context);
+                          } else {
+                            _pageController.nextPage(
+                              duration: const Duration(milliseconds: 300),
+                              curve: Curves.easeOutCubic,
+                            );
+                          }
+                        },
                       ),
                     ],
                   ),

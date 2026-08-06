@@ -5,8 +5,6 @@ import '../../../../core/network/api_exceptions.dart';
 import '../../../../core/auth/token_storage.dart';
 import '../../../../core/auth/auth_state.dart';
 import '../../../../core/logging/app_logger.dart';
-import '../dto/auth_token_dto.dart';
-import '../mappers/auth_mapper.dart';
 import '../../domain/models/user_session.dart';
 import '../../domain/repositories/auth_repository.dart';
 
@@ -14,6 +12,8 @@ class AuthRepositoryImpl implements AuthRepository {
   final ApiClient _apiClient;
   final TokenStorage _tokenStorage;
   final AppLogger _logger;
+
+  UserSession? _cachedSession;
 
   AuthRepositoryImpl({
     required ApiClient apiClient,
@@ -23,134 +23,276 @@ class AuthRepositoryImpl implements AuthRepository {
         _tokenStorage = tokenStorage,
         _logger = logger;
 
-  @override
-  Future<void> requestOtp({
-    required String phoneNumber,
-  }) async {
-    _logger.info('Telemetry: [otp_request_started] for phone $phoneNumber');
-    try {
-      await _apiClient.post(
-        ApiEndpoints.authOtpRequest,
-        body: {'phone_number': phoneNumber},
-        requiresAuth: false,
-      );
-    } catch (e, st) {
-      _logger.error('Telemetry: [otp_request_failed]', e, st);
-      rethrow;
+  /// Parses backend Token response into a UserSession and stores JWTs.
+  /// Every auth method MUST go through this — no other path stores tokens.
+  Future<UserSession> _processAuthResponse(Map<String, dynamic> response, String email) async {
+    final token = response['access_token']?.toString();
+    final refresh = response['refresh_token']?.toString();
+
+    if (token == null || token.isEmpty || refresh == null || refresh.isEmpty) {
+      throw const UnauthorizedException('Server returned invalid tokens');
     }
+
+    await _tokenStorage.writeTokens(AuthTokens(accessToken: token, refreshToken: refresh));
+
+    final session = UserSession(
+      uid: response['uid']?.toString() ?? '',
+      email: email,
+      nickname: response['nickname']?.toString() ?? email.split('@')[0],
+      fullName: response['full_name']?.toString(),
+      photoUrl: response['photo_url']?.toString(),
+      serviceZone: response['service_zone']?.toString() ?? 'VOI',
+      preferredPaymentMethod: 'Cash',
+      favoritePlaces: const [],
+      role: UserSession.parseRole(response['role']?.toString() ?? 'customer'),
+      isProfileComplete: response['is_profile_complete'] as bool? ?? false,
+      isActive: true,
+      createdAt: DateTime.now().toUtc(),
+      updatedAt: DateTime.now().toUtc(),
+      lastLogin: DateTime.now().toUtc(),
+      expiresAt: DateTime.now().toUtc().add(const Duration(days: 30)),
+    );
+
+    _cachedSession = session;
+    return session;
   }
 
   @override
-  Future<UserSession> verifyOtp({
-    required String phoneNumber,
-    required String otpCode,
+  Future<UserSession> signInWithEmail({
+    required String email,
+    required String password,
   }) async {
-    _logger.info('Telemetry: [otp_verify_started]');
-    try {
-      final jsonResponse = await _apiClient.post(
-        ApiEndpoints.authLogin,
-        body: {'phone_number': phoneNumber, 'otp': otpCode},
-        requiresAuth: false,
+    _logger.info('Auth: [email_signin_started] Email: $email');
+
+    // No try/catch fallback. If backend rejects, exception propagates to UI.
+    final response = await _apiClient.post(
+      ApiEndpoints.authLogin,
+      body: {'email': email, 'password': password},
+      requiresAuth: false,
+    );
+
+    final session = await _processAuthResponse(response as Map<String, dynamic>, email);
+    _logger.info('Auth: [email_signin_success] UID: ${session.uid}');
+    return session;
+  }
+
+  @override
+  Future<UserSession> signUpWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    _logger.info('Auth: [email_signup_started] Email: $email');
+
+    // No try/catch fallback. If backend rejects, exception propagates to UI.
+    final response = await _apiClient.post(
+      ApiEndpoints.authRegister,
+      body: {'email': email, 'password': password},
+      requiresAuth: false,
+    );
+
+    final session = await _processAuthResponse(response as Map<String, dynamic>, email);
+    _logger.info('Auth: [email_signup_success] UID: ${session.uid}');
+    return session;
+  }
+
+  @override
+  Future<UserSession> signInWithGoogle({
+    required String idToken,
+    String? email,
+    String? displayName,
+    String? photoUrl,
+  }) async {
+    _logger.info('Auth: [google_signin_started]');
+
+    // No try/catch fallback. No hardcoded timeout. Let ApiClient handle timeouts.
+    final response = await _apiClient.post(
+      ApiEndpoints.authGoogle,
+      body: {
+        'id_token': idToken,
+      },
+      requiresAuth: false,
+    );
+
+    // Backend validates the Google ID token and returns JWT + user info.
+    // Use the email from backend response (authoritative), not from client.
+    final backendEmail = (response as Map<String, dynamic>)['email']?.toString() ?? email ?? '';
+    final session = await _processAuthResponse(response, backendEmail);
+    _logger.info('Auth: [google_signin_success] UID: ${session.uid}');
+    return session;
+  }
+
+  @override
+  Future<UserSession> completeProfile({
+    required String nickname,
+    String? fullName,
+    String? photoUrl,
+    String? themePreference,
+    String? emergencyContact,
+  }) async {
+    _logger.info('Auth: [complete_profile] User: ${_cachedSession?.email}');
+    final response = await _apiClient.post(
+      ApiEndpoints.authProfileComplete,
+      body: {
+        'nickname': nickname,
+        if (fullName != null) 'full_name': fullName,
+        if (photoUrl != null) 'photo_url': photoUrl,
+        if (themePreference != null) 'theme_preference': themePreference,
+        if (emergencyContact != null) 'emergency_contact': emergencyContact,
+      },
+      requiresAuth: true,
+    );
+
+    // Update cached session with profile completion data
+    if (_cachedSession != null) {
+      final updated = UserSession(
+        uid: _cachedSession!.uid,
+        email: _cachedSession!.email,
+        nickname: nickname.trim().isEmpty ? _cachedSession!.email.split('@')[0] : nickname.trim(),
+        fullName: fullName ?? _cachedSession!.fullName,
+        photoUrl: photoUrl ?? _cachedSession!.photoUrl,
+        serviceZone: _cachedSession!.serviceZone,
+        preferredPaymentMethod: _cachedSession!.preferredPaymentMethod,
+        favoritePlaces: _cachedSession!.favoritePlaces,
+        role: _cachedSession!.role,
+        isProfileComplete: true,
+        isActive: true,
+        createdAt: _cachedSession!.createdAt,
+        updatedAt: DateTime.now().toUtc(),
+        lastLogin: _cachedSession!.lastLogin,
+        expiresAt: _cachedSession!.expiresAt,
       );
-
-      final tokenDto = AuthTokenDto.fromJson(jsonResponse as Map<String, dynamic>);
-      await _tokenStorage.writeTokens(AuthTokens(
-        accessToken: tokenDto.accessToken,
-        refreshToken: tokenDto.refreshToken,
-      ));
-
-      final session = AuthMapper.fromDto(tokenDto);
-      _logger.info('Telemetry: [otp_verify_success] User ID: ${session.userId}');
-      return session;
-    } catch (e, st) {
-      _logger.error('Telemetry: [otp_verify_failed]', e, st);
-      rethrow;
+      _cachedSession = updated;
+      return updated;
     }
+
+    throw const UnauthorizedException('No active session for profile completion');
+  }
+
+  @override
+  Future<void> sendPasswordResetEmail({
+    required String email,
+  }) async {
+    _logger.info('Auth: [password_reset_request] Email: $email');
+    await _apiClient.post(
+      ApiEndpoints.authForgotPasswordRequest,
+      body: {'email': email},
+      requiresAuth: false,
+    );
+  }
+
+  @override
+  Future<bool> verifyPasswordResetOtp({
+    required String email,
+    required String otp,
+  }) async {
+    _logger.info('Auth: [verify_otp_request] Email: $email');
+    final response = await _apiClient.post(
+      ApiEndpoints.authForgotPasswordVerifyOtp,
+      body: {'email': email, 'otp': otp},
+      requiresAuth: false,
+    );
+    return response['message'] == 'OTP verified successfully';
+  }
+
+  @override
+  Future<void> resetPasswordWithOtp({
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    _logger.info('Auth: [reset_password_request] Email: $email');
+    await _apiClient.post(
+      ApiEndpoints.authForgotPasswordReset,
+      body: {'email': email, 'otp': otp, 'new_password': newPassword},
+      requiresAuth: false,
+    );
   }
 
   @override
   Future<UserSession?> restoreSession() async {
-    _logger.info('Telemetry: [session_restore_started]');
+    _logger.info('Auth: [session_restore_started]');
     final accessToken = await _tokenStorage.readAccessToken();
-    final refreshTokenVal = await _tokenStorage.readRefreshToken();
-
-    if (accessToken == null || refreshTokenVal == null) {
-      _logger.info('Telemetry: [session_restore_none] No stored tokens found.');
+    if (accessToken == null || accessToken.isEmpty) {
+      _logger.info('Auth: [session_restore_none] No stored tokens found.');
       return null;
     }
 
+    if (_cachedSession != null) {
+      return _cachedSession;
+    }
+
+    // Validate the stored token against the backend.
+    // If the token is expired/invalid, clear storage and force re-login.
     try {
-      // Validate or refresh session against backend
-      final session = await refreshToken();
-      _logger.info('Telemetry: [session_restored] User ID: ${session.userId}, Role: ${session.role.name}');
+      final refreshTokenStr = await _tokenStorage.readRefreshToken();
+      if (refreshTokenStr == null || refreshTokenStr.isEmpty) {
+        _logger.info('Auth: [session_restore_no_refresh] No refresh token. Clearing.');
+        await _tokenStorage.clearTokens();
+        return null;
+      }
+
+      final response = await _apiClient.post(
+        ApiEndpoints.refreshToken,
+        body: {'refresh_token': refreshTokenStr},
+        requiresAuth: false,
+      );
+
+      final newAccess = (response as Map<String, dynamic>)['access_token']?.toString();
+      final newRefresh = response['refresh_token']?.toString();
+
+      if (newAccess == null || newAccess.isEmpty || newRefresh == null || newRefresh.isEmpty) {
+        _logger.warning('Auth: [session_restore_invalid_response] Backend returned empty tokens.');
+        await _tokenStorage.clearTokens();
+        return null;
+      }
+
+      await _tokenStorage.writeTokens(AuthTokens(accessToken: newAccess, refreshToken: newRefresh));
+
+      // Build session from the refresh response or decode JWT claims
+      final session = UserSession(
+        uid: response['uid']?.toString() ?? '',
+        email: response['email']?.toString() ?? '',
+        nickname: response['nickname']?.toString() ?? '',
+        serviceZone: response['service_zone']?.toString() ?? 'VOI',
+        preferredPaymentMethod: 'Cash',
+        role: UserSession.parseRole(response['role']?.toString() ?? 'customer'),
+        isProfileComplete: response['is_profile_complete'] as bool? ?? false,
+        isActive: true,
+        createdAt: DateTime.now().toUtc(),
+        updatedAt: DateTime.now().toUtc(),
+        lastLogin: DateTime.now().toUtc(),
+        expiresAt: DateTime.now().toUtc().add(const Duration(days: 30)),
+      );
+
+      _cachedSession = session;
+      _logger.info('Auth: [session_restore_success] UID: ${session.uid}');
       return session;
-    } on UnauthorizedException {
-      _logger.warning('Telemetry: [session_restore_expired] Stored refresh token rejected by backend.');
+    } catch (e) {
+      _logger.warning('Auth: [session_restore_failed] Token refresh failed: $e. Clearing tokens.');
       await _tokenStorage.clearTokens();
-      return null;
-    } on NetworkException {
-      // Defer session validation if network is offline
-      _logger.warning('Telemetry: [session_restore_offline] Network offline during restore; deferring.');
-      rethrow;
-    } catch (e, st) {
-      _logger.error('Telemetry: [session_restore_failed]', e, st);
-      await _tokenStorage.clearTokens();
+      _cachedSession = null;
       return null;
     }
   }
 
   @override
   Future<UserSession> refreshToken() async {
-    _logger.info('Telemetry: [token_refresh_started]');
-    final storedRefreshToken = await _tokenStorage.readRefreshToken();
-    if (storedRefreshToken == null || storedRefreshToken.isEmpty) {
-      _logger.warning('Telemetry: [token_refresh_failed] No refresh token available');
-      throw const UnauthorizedException('No refresh token available');
-    }
-
-    try {
-      final jsonResponse = await _apiClient.post(
-        ApiEndpoints.refreshToken,
-        body: {'refresh_token': storedRefreshToken},
-        requiresAuth: false,
-      );
-
-      final tokenDto = AuthTokenDto.fromJson(jsonResponse as Map<String, dynamic>);
-      await _tokenStorage.writeTokens(AuthTokens(
-        accessToken: tokenDto.accessToken,
-        refreshToken: tokenDto.refreshToken,
-      ));
-
-      final session = AuthMapper.fromDto(tokenDto);
-      _logger.info('Telemetry: [token_refreshed] Expiration updated to ${session.expiresAt}');
-      return session;
-    } on UnauthorizedException {
-      // Refresh Loop Safeguard: 401 on refresh clears storage immediately and halts retries
-      _logger.error('Telemetry: [refresh_failed_401] Refresh token rejected by server. Clearing storage.');
-      await _tokenStorage.clearTokens();
-      rethrow;
-    } catch (e, st) {
-      _logger.error('Telemetry: [token_refresh_error]', e, st);
-      rethrow;
-    }
+    final current = await restoreSession();
+    if (current != null) return current;
+    throw const UnauthorizedException('No session available');
   }
 
   @override
   Future<void> logout() async {
-    _logger.info('Telemetry: [logout_started]');
+    _logger.info('Auth: [logout_started]');
+    _cachedSession = null;
     await _tokenStorage.clearTokens();
-    _logger.info('Telemetry: [logout_complete]');
+    _logger.info('Auth: [logout_complete]');
   }
 
   @override
-  Future<bool> isBiometricSupported() async {
-    // Amendment 17: Biometric readiness hook (deferred to F4/F5)
-    return false;
-  }
+  Future<bool> isBiometricSupported() async => false;
 
   @override
-  Future<UserSession?> authenticateWithBiometrics() async {
-    // Amendment 17: Biometric readiness hook (deferred to F4/F5)
-    return null;
-  }
+  Future<UserSession?> authenticateWithBiometrics() async => null;
 }

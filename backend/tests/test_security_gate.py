@@ -48,18 +48,19 @@ def test_security_headers_present():
 
 def test_login_rate_limiting():
     mock_auth_service = AsyncMock()
-    mock_auth_service.verify_otp_and_login.side_effect = RuleViolationError("Invalid credentials")
+    mock_auth_service.login_with_email.side_effect = RuleViolationError("Invalid credentials")
     app.dependency_overrides[get_auth_service] = lambda: mock_auth_service
     
     try:
-        phone = f"+254700{uuid4().hex[:6]}"
+        email = f"test_{uuid4().hex[:6]}@example.com"
         # Make 5 calls (limit is 5)
         for _ in range(5):
-            client.post("/auth/login", json={"phone_number": phone, "otp": "123456"})
+            client.post("/auth/login", json={"email": email, "password": "wrongpassword"})
         
         # 6th call should be 429 Rate Limited
-        resp = client.post("/auth/login", json={"phone_number": phone, "otp": "123456"})
+        resp = client.post("/auth/login", json={"email": email, "password": "wrongpassword"})
         assert resp.status_code == 429
         assert resp.json()["detail"]["error_code"] == "RATE_LIMIT_EXCEEDED"
     finally:
         app.dependency_overrides.clear()
+

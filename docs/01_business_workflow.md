@@ -34,7 +34,7 @@ The MVP question for every feature: *does this help the owner complete today's r
 
 **Rider** — logs in, goes online/offline, accepts/rejects assigned rides, navigates, starts/completes rides, collects cash, does end-of-day cash handover, reports incidents, triggers SOS. Must be `id_verified` before going online.
 
-**Passenger** — registers via phone + SMS OTP (login only, no per-ride OTP), requests rides, accepts/declines fares, tracks assigned rider, pays, rates, views history, saves personal places, triggers SOS.
+**Passenger** — registers/logs in via Google Sign-In, Facebook Login, Apple Sign-In (iOS), or Email + Password (with 6-digit Email OTP password reset), requests rides, accepts/declines fares, tracks assigned rider, pays via M-Pesa STK Push / Cash, rates, views history, saves personal places, triggers SOS. Phone number is provided strictly as an optional payment MSISDN.
 
 ---
 

@@ -15,11 +15,12 @@ async def live():
 @router.get("/ready")
 async def ready():
     try:
-        conn = await asyncio.wait_for(db.get_connection(), timeout=2.0)
-        try:
-            await conn.fetchval("SELECT 1")
-        finally:
-            await db.pool.release(conn)
+        if not db.pool:
+            await db.connect()
+        if not db.pool:
+            raise RuntimeError("DB Pool unavailable")
+        async with db.pool.acquire() as conn:
+            await asyncio.wait_for(conn.fetchval("SELECT 1"), timeout=2.0)
         return {"status": "ready"}
     except Exception:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail={"status": "not ready"})
@@ -39,4 +40,3 @@ async def preflight_health_check():
 async def get_metrics_summary():
     from app.core.metrics_collector import metrics_collector
     return metrics_collector.get_summary()
-

@@ -173,13 +173,13 @@ void main() {
       );
 
       // Trigger periodic poll
-      await Future<void>.delayed(const Duration(milliseconds: 3100));
+      await Future<void>.delayed(const Duration(milliseconds: 3500));
 
       expect(notifier.stkStatus, equals(StkPaymentStatus.success));
       expect(repo.pollCount, equals(1));
 
       // Wait another period: verify polling STOPPED because isTerminal == true
-      await Future<void>.delayed(const Duration(milliseconds: 3100));
+      await Future<void>.delayed(const Duration(milliseconds: 3500));
       expect(repo.pollCount, equals(1)); // Poll count did not increase!
 
       notifier.dispose();

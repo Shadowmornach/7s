@@ -6,10 +6,12 @@ Bridge between specification documents and OpenAPI contract. Every endpoint maps
 
 ## Auth
 
-| Method | Endpoint | Role | Auth | BR | Description |
-|---|---|---|---|---|---|
-| POST | `/api/v1/auth/otp/request` | Any | No | BR-001 | Request OTP for phone number |
-| POST | `/api/v1/auth/otp/verify` | Any | No | BR-001 | Verify OTP, receive JWT |
+| POST | `/api/v1/auth/register` | Any | No | BR-001 | Register with Email & Password |
+| POST | `/api/v1/auth/login` | Any | No | BR-001 | Sign in with Email & Password |
+| POST | `/api/v1/auth/google` | Any | No | BR-001 | Sign in / register via Google Sign-In |
+| POST | `/api/v1/auth/forgot-password/request` | Any | No | BR-001 | Request 6-digit OTP for email password reset |
+| POST | `/api/v1/auth/forgot-password/verify-otp` | Any | No | BR-001 | Verify 6-digit OTP for email password reset |
+| POST | `/api/v1/auth/forgot-password/reset` | Any | No | BR-001 | Reset password with verified 6-digit OTP |
 | POST | `/api/v1/auth/refresh` | Any | Yes | BR-002 | Refresh expired JWT |
 
 ## Rides

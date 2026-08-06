@@ -14,6 +14,8 @@ import '../../features/onboarding/presentation/providers/onboarding_provider.dar
 import '../../features/passenger/domain/repositories/passenger_repository.dart';
 import '../../features/passenger/data/repositories/passenger_repository_impl.dart';
 import '../../features/passenger/presentation/providers/passenger_provider.dart';
+import '../../features/passenger/presentation/providers/fare_templates_provider.dart';
+import '../../features/passenger/presentation/providers/ride_state_notifier.dart';
 import '../../features/rider/domain/repositories/rider_repository.dart';
 import '../../features/rider/data/repositories/rider_repository_impl.dart';
 import '../../features/rider/presentation/providers/rider_provider.dart';
@@ -65,6 +67,9 @@ class AppProviders {
       ),
       ChangeNotifierProvider<OnboardingProvider>(
         create: (context) => OnboardingProvider(storage: storage),
+      ),
+      ChangeNotifierProvider<FareTemplatesNotifier>(
+        create: (context) => FareTemplatesNotifier(),
       ),
       ProxyProvider2<AppConfig, TokenStorage, ApiClient>(
         update: (context, cfg, tokStorage, previous) =>
@@ -135,6 +140,9 @@ class AppProviders {
       ProxyProvider2<AuthRepository, ConnectivityService, SessionCoordinator>(
         update: (context, authRepo, conn, previous) =>
             previous ?? SessionCoordinator(authRepository: authRepo, connectivityService: conn, logger: logger),
+      ),
+      ChangeNotifierProvider<RideStateNotifier>(
+        create: (context) => RideStateNotifier(),
       ),
       ChangeNotifierProxyProvider<SessionCoordinator, AuthNotifier>(
         create: (context) => AuthNotifier(

@@ -1,15 +1,15 @@
 class LoginRequestDto {
-  final String phoneNumber;
+  final String email;
   final String password;
 
   const LoginRequestDto({
-    required this.phoneNumber,
+    required this.email,
     required this.password,
   });
 
   Map<String, dynamic> toJson() {
     return {
-      'phone_number': phoneNumber,
+      'email': email,
       'password': password,
     };
   }

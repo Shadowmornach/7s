@@ -1,13 +1,44 @@
 import '../models/user_session.dart';
 
 abstract class AuthRepository {
-  Future<void> requestOtp({
-    required String phoneNumber,
+  Future<UserSession> signInWithEmail({
+    required String email,
+    required String password,
   });
 
-  Future<UserSession> verifyOtp({
-    required String phoneNumber,
-    required String otpCode,
+  Future<UserSession> signUpWithEmail({
+    required String email,
+    required String password,
+  });
+
+  Future<UserSession> signInWithGoogle({
+    required String idToken,
+    String? email,
+    String? displayName,
+    String? photoUrl,
+  });
+
+  Future<UserSession> completeProfile({
+    required String nickname,
+    String? fullName,
+    String? photoUrl,
+    String? themePreference,
+    String? emergencyContact,
+  });
+
+  Future<void> sendPasswordResetEmail({
+    required String email,
+  });
+
+  Future<bool> verifyPasswordResetOtp({
+    required String email,
+    required String otp,
+  });
+
+  Future<void> resetPasswordWithOtp({
+    required String email,
+    required String otp,
+    required String newPassword,
   });
 
   Future<UserSession?> restoreSession();
@@ -16,7 +47,6 @@ abstract class AuthRepository {
 
   Future<void> logout();
 
-  // Amendment 17: Biometric readiness interface hook (deferred to F4/F5)
   Future<bool> isBiometricSupported();
   Future<UserSession?> authenticateWithBiometrics();
 }

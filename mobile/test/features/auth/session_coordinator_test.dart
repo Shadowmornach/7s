@@ -33,9 +33,14 @@ class MockAuthRepository implements AuthRepository {
       throw Exception('401 Unauthorized');
     }
     return UserSession(
-      userId: 'usr-1',
-      phoneNumber: '+254712345678',
-      role: UserRole.passenger,
+      uid: 'usr-1',
+      email: 'test@example.com',
+      nickname: 'Test',
+      role: UserRole.customer,
+      isProfileComplete: true,
+      createdAt: DateTime.now().toUtc(),
+      updatedAt: DateTime.now().toUtc(),
+      lastLogin: DateTime.now().toUtc(),
       expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 15)),
     );
   }
@@ -44,17 +49,74 @@ class MockAuthRepository implements AuthRepository {
   Future<UserSession?> restoreSession() async => restoreResult;
 
   @override
-  Future<void> requestOtp({required String phoneNumber}) async {}
-
-  @override
-  Future<UserSession> verifyOtp({required String phoneNumber, required String otpCode}) async {
+  Future<UserSession> signInWithEmail({required String email, required String password}) async {
     return UserSession(
-      userId: 'usr-1',
-      phoneNumber: phoneNumber,
-      role: UserRole.passenger,
+      uid: 'usr-1',
+      email: email,
+      nickname: 'Test',
+      role: UserRole.customer,
+      isProfileComplete: true,
+      createdAt: DateTime.now().toUtc(),
+      updatedAt: DateTime.now().toUtc(),
+      lastLogin: DateTime.now().toUtc(),
       expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 15)),
     );
   }
+
+  @override
+  Future<UserSession> signUpWithEmail({required String email, required String password}) async {
+    return UserSession(
+      uid: 'usr-1',
+      email: email,
+      nickname: '',
+      role: UserRole.customer,
+      isProfileComplete: false,
+      createdAt: DateTime.now().toUtc(),
+      updatedAt: DateTime.now().toUtc(),
+      lastLogin: DateTime.now().toUtc(),
+      expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 15)),
+    );
+  }
+
+  @override
+  Future<UserSession> signInWithGoogle({
+    required String idToken,
+    String? email,
+    String? displayName,
+    String? photoUrl,
+  }) async {
+    return UserSession(
+      uid: 'usr-g-1',
+      email: email ?? 'google@example.com',
+      nickname: displayName ?? 'Google',
+      role: UserRole.customer,
+      isProfileComplete: false,
+      createdAt: DateTime.now().toUtc(),
+      updatedAt: DateTime.now().toUtc(),
+      lastLogin: DateTime.now().toUtc(),
+      expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 15)),
+    );
+  }
+
+  @override
+  Future<UserSession> completeProfile({required String nickname, String? fullName, String? photoUrl}) async {
+    return UserSession(
+      uid: 'usr-1',
+      email: 'test@example.com',
+      nickname: nickname,
+      fullName: fullName,
+      photoUrl: photoUrl,
+      role: UserRole.customer,
+      isProfileComplete: true,
+      createdAt: DateTime.now().toUtc(),
+      updatedAt: DateTime.now().toUtc(),
+      lastLogin: DateTime.now().toUtc(),
+      expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 15)),
+    );
+  }
+
+  @override
+  Future<void> sendPasswordResetEmail({required String email}) async {}
 
   @override
   Future<void> logout() async {}
@@ -92,7 +154,6 @@ void main() {
       final results = await Future.wait([f1, f2, f3]);
 
       expect(results.length, equals(3));
-      // Underlying repository refreshToken must be called exactly 1 time!
       expect(authRepo.refreshCallCount, equals(1));
     });
 

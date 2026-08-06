@@ -7,9 +7,18 @@ class AuthMapper {
     final expiresAt = nowUtc.add(Duration(seconds: dto.expiresIn));
 
     return UserSession(
-      userId: dto.user.id,
+      uid: dto.user.id,
+      email: dto.user.email.isNotEmpty ? dto.user.email : 'user@7s.delivery',
+      nickname: dto.user.nickname ?? dto.user.email.split('@').first,
       phoneNumber: dto.user.phoneNumber,
+      serviceZone: 'VOI',
+      preferredPaymentMethod: 'Cash',
       role: UserSession.parseRole(dto.user.role),
+      isProfileComplete: dto.user.isProfileComplete,
+      isActive: true,
+      createdAt: nowUtc,
+      updatedAt: nowUtc,
+      lastLogin: nowUtc,
       expiresAt: expiresAt,
     );
   }

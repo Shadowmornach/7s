@@ -68,15 +68,12 @@ class SessionCoordinator {
     } catch (e, st) {
       _logger.error('Session restoration exception', e, st);
       _currentSession = null;
-      _state = AuthState.failed;
+      _state = AuthState.unauthenticated;
     }
   }
 
-  /// Single-Flight Refresh Locking:
-  /// Concurrent callers await the exact same refresh Future rather than firing duplicate network requests.
   Future<UserSession> refreshTokenSingleFlight() async {
     if (_activeRefreshFuture != null) {
-      _logger.info('Telemetry: [single_flight_refresh_await] Joined active in-flight refresh request.');
       return _activeRefreshFuture!;
     }
 
@@ -97,21 +94,12 @@ class SessionCoordinator {
     }
   }
 
-  Future<void> requestOtp(String phoneNumber) async {
-    try {
-      await _authRepository.requestOtp(phoneNumber: phoneNumber);
-    } catch (e) {
-      _state = AuthState.failed;
-      rethrow;
-    }
-  }
-
-  Future<void> login(String phoneNumber, String otpCode) async {
+  Future<void> signInWithEmail(String email, String password) async {
     _state = AuthState.refreshing;
     try {
-      final session = await _authRepository.verifyOtp(
-        phoneNumber: phoneNumber,
-        otpCode: otpCode,
+      final session = await _authRepository.signInWithEmail(
+        email: email,
+        password: password,
       );
       _currentSession = session;
       _state = AuthState.authenticated;
@@ -120,6 +108,117 @@ class SessionCoordinator {
       _state = AuthState.failed;
       rethrow;
     }
+  }
+
+  Future<void> signUpWithEmail(String email, String password) async {
+    _state = AuthState.refreshing;
+    try {
+      final session = await _authRepository.signUpWithEmail(
+        email: email,
+        password: password,
+      );
+      _currentSession = session;
+      _state = AuthState.authenticated;
+    } catch (e) {
+      _currentSession = null;
+      _state = AuthState.failed;
+      rethrow;
+    }
+  }
+
+  Future<void> signInWithGoogle({
+    required String idToken,
+    String? email,
+    String? displayName,
+    String? photoUrl,
+  }) async {
+    _state = AuthState.refreshing;
+    try {
+      final session = await _authRepository.signInWithGoogle(
+        idToken: idToken,
+        email: email,
+        displayName: displayName,
+        photoUrl: photoUrl,
+      );
+      _currentSession = session;
+      _state = AuthState.authenticated;
+    } catch (e) {
+      _currentSession = null;
+      _state = AuthState.failed;
+      rethrow;
+    }
+  }
+
+  Future<void> completeProfile({
+    required String nickname,
+    String? fullName,
+    String? photoUrl,
+    String? themePreference,
+    String? emergencyContact,
+  }) async {
+    try {
+      final session = await _authRepository.completeProfile(
+        nickname: nickname,
+        fullName: fullName,
+        photoUrl: photoUrl,
+        themePreference: themePreference,
+        emergencyContact: emergencyContact,
+      );
+      _currentSession = session;
+      _state = AuthState.authenticated;
+    } catch (e) {
+      _state = AuthState.failed;
+      rethrow;
+    }
+  }
+
+  void updatePhoneNumber(String? phone) {
+    if (_currentSession != null) {
+      if (phone == null || phone.trim().isEmpty) {
+        _currentSession = UserSession(
+          uid: _currentSession!.uid,
+          email: _currentSession!.email,
+          nickname: _currentSession!.nickname,
+          fullName: _currentSession!.fullName,
+          photoUrl: _currentSession!.photoUrl,
+          phoneNumber: null,
+          serviceZone: _currentSession!.serviceZone,
+          preferredPaymentMethod: _currentSession!.preferredPaymentMethod,
+          favoritePlaces: _currentSession!.favoritePlaces,
+          homeLocation: _currentSession!.homeLocation,
+          workLocation: _currentSession!.workLocation,
+          role: _currentSession!.role,
+          isProfileComplete: _currentSession!.isProfileComplete,
+          isActive: _currentSession!.isActive,
+          createdAt: _currentSession!.createdAt,
+          updatedAt: DateTime.now().toUtc(),
+          lastLogin: _currentSession!.lastLogin,
+          expiresAt: _currentSession!.expiresAt,
+        );
+      } else {
+        _currentSession = _currentSession!.copyWith(phoneNumber: phone);
+      }
+    }
+  }
+
+
+  Future<void> sendPasswordResetEmail(String email) async {
+    await _authRepository.sendPasswordResetEmail(email: email);
+  }
+
+  Future<bool> verifyPasswordResetOtp(String email, String otp) async {
+    return await _authRepository.verifyPasswordResetOtp(
+      email: email,
+      otp: otp,
+    );
+  }
+
+  Future<void> resetPasswordWithOtp(String email, String otp, String newPassword) async {
+    await _authRepository.resetPasswordWithOtp(
+      email: email,
+      otp: otp,
+      newPassword: newPassword,
+    );
   }
 
   Future<void> logout() async {

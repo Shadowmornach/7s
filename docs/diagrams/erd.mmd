@@ -6,7 +6,12 @@ erDiagram
 
     users {
         uuid id PK
-        varchar phone_number UK "NOT NULL, UNIQUE"
+        varchar email UK "NOT NULL, UNIQUE — primary auth identity"
+        varchar phone_number "NULLABLE — M-Pesa payment MSISDN only"
+        varchar password_hash "NULLABLE — for Email+Password auth"
+        varchar google_id "NULLABLE — for Google Sign-In"
+        varchar apple_id "NULLABLE — for Apple Sign-In (iOS)"
+        varchar facebook_id "NULLABLE — for Facebook Login"
         role role "NOT NULL — OWNER, RIDER, PASSENGER"
         varchar full_name "NOT NULL"
         varchar photo_url
@@ -170,6 +175,28 @@ erDiagram
         uuid updated_by FK "→ users.id"
     }
 
+    ride_messages {
+        uuid id PK
+        uuid ride_id FK "→ rides.id, NOT NULL"
+        uuid sender_id FK "→ users.id, NOT NULL"
+        user_role sender_role "NOT NULL — PASSENGER, RIDER, OWNER"
+        text message "NOT NULL"
+        boolean is_quick_reply "NOT NULL, DEFAULT false"
+        timestamptz read_at "NULLABLE"
+        timestamptz created_at "NOT NULL, DEFAULT now()"
+    }
+
+    email_password_resets {
+        uuid id PK
+        varchar email "NOT NULL"
+        varchar otp_code_hash "NOT NULL — SHA-256 hash"
+        timestamptz expires_at "NOT NULL"
+        timestamptz verified_at
+        boolean is_used "NOT NULL, DEFAULT false"
+        integer attempts "NOT NULL, DEFAULT 0"
+        timestamptz created_at "NOT NULL, DEFAULT now()"
+    }
+
     %% ============================================================
     %% Relationships
     %% ============================================================
@@ -191,6 +218,9 @@ erDiagram
     users ||--o{ ride_events : "actor_id"
 
     rides ||--o{ payment_events : "ride_id"
+
+    rides ||--o{ ride_messages : "ride_id"
+    users ||--o{ ride_messages : "sender_id"
 
     rides ||--o{ sos_alerts : "ride_id"
     users ||--o{ sos_alerts : "triggered_by"

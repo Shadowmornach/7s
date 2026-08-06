@@ -7,9 +7,9 @@ void main() {
       final service = DeviceLocationService();
       final loc = await service.getCurrentLocation();
 
-      expect(loc.latitude, equals(-1.286389));
-      expect(loc.longitude, equals(36.817223));
-      expect(loc.accuracy, equals(5.0));
+      expect(loc.latitude, equals(-3.3967));
+      expect(loc.longitude, equals(38.5562));
+      expect(loc.accuracy, equals(10.0));
       expect(loc.timestamp, isA<DateTime>());
     });
 

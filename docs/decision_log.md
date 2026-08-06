@@ -31,3 +31,8 @@ Architectural and design decisions made during the specification phase. Indexed 
 | DL-023 | No SMS/call escalation for SOS in V1 | Documented limitation, not a silent gap; push notifications only | 2026-07-24 | BR-012, Doc 1 |
 | DL-024 | Place search (autocomplete/geocoding) deferred past V1 | Routing (distance/ETA) is required; search is a separate concern that can wait | 2026-07-24 | Doc 1 |
 | DL-025 | `ride_events.metadata` is intentionally schema-flexible (JSON) | Prevents nullable-column drift; fields only promoted to first-class columns when indexing demands it | 2026-07-24 | Doc 4 §3 |
+| DL-026 | Conditional M-Pesa Phone Number Collection | Phone number is optional during signup/profile setup; requested only when user chooses M-Pesa payment method for the first time | 2026-08-01 | BR-001, BR-010 |
+| DL-027 | Maps: `flutter_map` + OpenStreetMap Engine | Uses `flutter_map` with OpenStreetMap tile provider (`tile.openstreetmap.org`); free tier with zero API keys or paid billing required | 2026-08-01 | Doc 4 §4, pubspec.yaml |
+| DL-028 | Google OAuth + Email/Password Auth Architecture | Replaced legacy phone OTP signup with Google Sign-In (server ID token validation) and Email/Password with JWT sessions; PASSENGER role only for self-service | 2026-08-01 | BR-001, BR-002, Migration 023 |
+| DL-029 | Complete Deprecation of Phone OTP Auth & Email Password Reset Standard | Completely removed phone OTP authentication and SMS login endpoints from repository, database, and ERD. Identity is strictly anchored on Email/OAuth (Google, Facebook, Apple, Email+Password). Phone number is exclusively an operational M-Pesa payment MSISDN. 6-digit Email OTP implemented for Forgot Password resets. | 2026-08-02 | BR-001, Migration 027, ERD |
+

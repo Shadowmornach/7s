@@ -87,6 +87,9 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenPayload:
     except RuleViolationError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
+get_current_user_payload = get_current_user
+
+
 def require_role(allowed_roles: list[str]):
     async def role_checker(current_user: TokenPayload = Depends(get_current_user)):
         user_role_upper = current_user.role.upper() if current_user.role else ""

@@ -6,9 +6,10 @@ Security, Rate Limiting, and Scalability policy. Written before code, so every f
 ## 1. Security
 
 ### Authentication
-- Supabase Auth, phone-number based, SMS OTP for **login only** (not per-ride — that decision stands).
-- JWT issued by Supabase on successful login; every backend request carries it.
-- Owner account gets a `role = owner` claim — never inferred client-side.
+- Primary authentication via Google Sign-In, Facebook Login, Apple Sign-In (iOS), and Email + Password. Phone numbers are strictly payment MSISDNs.
+- 6-digit OTP sent to verified email for self-service password resets.
+- JWT issued on successful sign-in; every backend request carries it.
+- Owner/Rider/Passenger/Admin claims are server-side enforced — never inferred client-side.
 
 ### The client never holds a privileged key
 - Flutter app talks to your FastAPI backend, not directly to Supabase for anything involving business rules (strike checks, fare template logic, payment initiation). This mirrors the pattern you already run on VigilantEdge, and for the same reason: business rules (booking type decision, strike thresholds, fare template matching) need to live in one place, not be duplicated in Flutter and re-validated hopefully-correctly by RLS.

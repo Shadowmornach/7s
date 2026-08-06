@@ -32,11 +32,40 @@ class PassengerNotifier extends ChangeNotifier {
   PassengerNotifier({required PassengerRepository repository}) : _repository = repository {
     _pickupLocation = const PlaceLocation(
       placeId: 'p-current',
-      primaryText: 'Current Location',
-      secondaryText: 'Kenyatta Avenue, Nairobi',
-      latitude: -1.286389,
-      longitude: 36.817223,
+      primaryText: 'Current location',
+      secondaryText: 'Voi Town Center, Kenya',
+      latitude: -3.3967,
+      longitude: 38.5562,
     );
+  }
+
+  void setFixedFareRoute({
+    required String destinationTitle,
+    required double fareAmount,
+    String pickupTitle = 'Current location',
+  }) {
+    _pickupLocation = PlaceLocation(
+      placeId: 'voi-pickup-current',
+      primaryText: pickupTitle,
+      secondaryText: 'Voi Town Center, Kenya',
+      latitude: -3.3967,
+      longitude: 38.5562,
+    );
+    _destinationLocation = PlaceLocation(
+      placeId: 'voi-dest-${destinationTitle.toLowerCase().replaceAll(' ', '-')}',
+      primaryText: destinationTitle,
+      secondaryText: 'Voi Town, Kenya',
+      latitude: -3.3980,
+      longitude: 38.5580,
+    );
+    _currentQuote = FareQuote(
+      fare: fareAmount,
+      currency: 'KSh',
+      distanceKm: 5.5,
+      etaMinutes: 10,
+    );
+    _tripState = PassengerTripState.selectingPayment;
+    notifyListeners();
   }
 
   PassengerTripState get tripState => _tripState;

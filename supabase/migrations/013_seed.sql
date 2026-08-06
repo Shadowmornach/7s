@@ -8,11 +8,10 @@
 -- ============================================================
 
 INSERT INTO configuration (key, value, description) VALUES
-    -- Authentication & OTP
-    ('otp_expiry_minutes',              '5',        'OTP validity window in minutes (BR-001)'),
-    ('otp_max_attempts',                '5',        'Max verification attempts per OTP (BR-001)'),
-    ('otp_max_resends_per_hour',        '3',        'Max OTP resend requests per phone per hour (BR-001)'),
-    ('otp_resend_cooldown_seconds',     '60',       'Minimum wait between resend requests (BR-001)'),
+    -- Authentication & Password Reset OTP
+    ('email_otp_expiry_minutes',        '10',       'Email OTP validity window in minutes'),
+    ('email_otp_max_attempts',          '5',        'Max verification attempts per email OTP'),
+    ('email_otp_cooldown_seconds',      '60',       'Minimum wait between email OTP requests'),
 
     -- Booking & Review
     ('restricted_booking_threshold',    '2',        'Strike count triggering Restricted Booking (BR-005)'),
@@ -68,8 +67,8 @@ DECLARE
     p_mkt UUID;
 BEGIN
     -- 1. Owner account & rider profile
-    INSERT INTO users (phone_number, role, full_name, status)
-    VALUES ('+254700000000', 'OWNER', '7s Owner', 'ACTIVE')
+    INSERT INTO users (phone_number, role, full_name, is_active)
+    VALUES ('+254700000000', 'OWNER', '7s Owner', true)
     ON CONFLICT (phone_number) DO UPDATE SET full_name = EXCLUDED.full_name
     RETURNING id INTO owner_id;
 
@@ -78,8 +77,8 @@ BEGIN
     ON CONFLICT (id) DO UPDATE SET id_verified = true;
 
     -- 2. Additional verified rider account
-    INSERT INTO users (phone_number, role, full_name, status)
-    VALUES ('+254711000111', 'RIDER', 'Juma Bakari (Rider 2)', 'ACTIVE')
+    INSERT INTO users (phone_number, role, full_name, is_active)
+    VALUES ('+254711000111', 'RIDER', 'Juma Bakari (Rider 2)', true)
     ON CONFLICT (phone_number) DO UPDATE SET full_name = EXCLUDED.full_name
     RETURNING id INTO rider2_id;
 
@@ -122,4 +121,3 @@ BEGIN
         (p_sgr, p_hosp, 200.00, 6.0, 720, true, 'Voi SGR Station to Voi Hospital'),
         (p_hosp, p_sgr, 200.00, 6.0, 720, true, 'Voi Hospital to Voi SGR Station');
 END $$;
-

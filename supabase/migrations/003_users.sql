@@ -16,7 +16,7 @@ CREATE TABLE users (
 );
 
 COMMENT ON TABLE users IS 'All users: owner, riders, passengers. One table + role-specific extensions.';
-COMMENT ON COLUMN users.phone_number IS 'Unique, verified via SMS OTP (BR-001). Format: +254...';
+COMMENT ON COLUMN users.phone_number IS 'Optional M-Pesa payment MSISDN. Format: 0712xxxxxx / 2547...';
 COMMENT ON COLUMN users.role IS 'Server-side claim, never inferred client-side (BR-002).';
 COMMENT ON COLUMN users.is_suspended IS 'Suspended users cannot create rides or go online (BR-004).';
 

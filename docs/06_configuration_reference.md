@@ -7,14 +7,13 @@ Unlike Documents 1–5 (frozen), this document is updated as the business owner 
 
 ---
 
-## Authentication & OTP
+## Authentication & Password Reset OTP
 
 | Key | Default | Unit | Description | Source |
 |---|---|---|---|---|
-| `otp_expiry_minutes` | 5 | minutes | OTP validity window before expiry | BR-001 |
-| `otp_max_attempts` | 5 | count | Max verification attempts per OTP | BR-001 |
-| `otp_max_resends_per_hour` | 3 | count | Max OTP resend requests per phone per hour | BR-001 |
-| `otp_resend_cooldown_seconds` | 60 | seconds | Minimum wait between resend requests | BR-001 |
+| `email_otp_expiry_minutes` | 10 | minutes | Email OTP validity window before expiry | BR-001 |
+| `email_otp_max_attempts` | 5 | count | Max verification attempts per email OTP | BR-001 |
+| `email_otp_cooldown_seconds` | 60 | seconds | Minimum wait between email OTP resend requests | BR-001 |
 
 ## Booking & Review
 

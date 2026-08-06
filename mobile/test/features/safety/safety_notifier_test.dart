@@ -117,8 +117,8 @@ void main() {
       expect(notifier.activeAlert!.alertId, equals('sos-mock-1'));
       expect(notifier.activeAlert!.type, equals(SafetyAlertType.sos));
       // Dynamic device GPS coords resolved automatically
-      expect(notifier.activeAlert!.latitude, equals(-1.286389));
-      expect(notifier.activeAlert!.longitude, equals(36.817223));
+      expect(notifier.activeAlert!.latitude, equals(-3.3967));
+      expect(notifier.activeAlert!.longitude, equals(38.5562));
 
       notifier.dispose();
     });

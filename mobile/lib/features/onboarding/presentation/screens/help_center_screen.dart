@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import '../../../../core/widgets/app_card.dart';
+import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_typography.dart';
 
+/// Redesigned Help & Knowledge Centre with AppCard FAQ tiles and support headers.
 class HelpCenterScreen extends StatelessWidget {
   const HelpCenterScreen({super.key});
 
@@ -18,26 +21,89 @@ class HelpCenterScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Help & Knowledge Centre'),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
       ),
       body: SafeArea(
-        child: ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: _faqs.length,
-          separatorBuilder: (context, index) => const Divider(),
-          itemBuilder: (context, index) {
-            final faq = _faqs[index];
-            return ExpansionTile(
-              title: Text(faq['q']!, style: const TextStyle(fontWeight: FontWeight.bold)),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(faq['a']!, style: AppTypography.caption),
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            // Search / Header Tile
+            AppCard(
+              backgroundColor: AppColors.primary,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.headset_mic_rounded, color: Colors.white, size: 28),
+                      SizedBox(width: 12),
+                      Text(
+                        'How can we help?',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Search our knowledge base or browse frequently asked questions below.',
+                    style: AppTypography.bodyMedium.copyWith(color: Colors.white.withValues(alpha: 0.9)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'FREQUENTLY ASKED QUESTIONS',
+              style: AppTypography.labelMedium.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textMuted,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ...List.generate(_faqs.length, (index) {
+              final faq = _faqs[index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: AppCard(
+                  padding: EdgeInsets.zero,
+                  child: Theme(
+                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      title: Text(
+                        faq['q']!,
+                        style: AppTypography.titleMedium.copyWith(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          child: Text(
+                            faq['a']!,
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: AppColors.textSecondary,
+                              height: 1.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ],
-            );
-          },
+              );
+            }),
+          ],
         ),
       ),
     );

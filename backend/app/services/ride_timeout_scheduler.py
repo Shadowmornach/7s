@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from asyncpg import Pool
 from app.db.connection import db
 from app.core.config import settings
 from app.core.metrics import ride_timeouts_total
@@ -7,13 +8,23 @@ from app.core.metrics import ride_timeouts_total
 logger = logging.getLogger("7s.timeout")
 
 class TimeoutService:
-    def __init__(self):
+    def __init__(self, pool: Pool | None = None):
         self.is_running = False
         self._task = None
+        self._pool = pool
+
+    async def _get_pool(self) -> Pool:
+        pool = self._pool or db.pool
+        if not pool:
+            await db.connect()
+            pool = db.pool
+        if not pool:
+            raise RuntimeError("Database pool is not initialized.")
+        return pool
 
     async def _sweep(self):
-        conn = await db.get_connection()
-        try:
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
             # Cancel rides stuck in REQUESTED for too long
             # Using 011_triggers.sql state machine, we must INSERT a ride_event (BR-022)
             # instead of directly updating the rides table.
@@ -36,9 +47,6 @@ class TimeoutService:
             if updated_count > 0:
                 ride_timeouts_total.inc(updated_count)
                 logger.info(f"Auto-cancelled {updated_count} stuck rides")
-                
-        finally:
-            await db.pool.release(conn)
 
     async def _run(self):
         while self.is_running:

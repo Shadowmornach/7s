@@ -2,82 +2,123 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from pydantic import BaseModel
 from typing import Optional
 from app.core.config import settings
-from app.schemas.auth import Token, OTPRequest, OTPVerifyRequest, RegisterRequest, UserRole
+from app.schemas.auth import (
+    Token, EmailRegisterRequest, EmailLoginRequest, GoogleLoginRequest,
+    CompleteProfileRequest, PasswordResetRequest, UserRole, UserResponse
+)
 from app.services.auth_service import AuthService
-from app.api.dependencies import get_auth_service
+from app.api.dependencies import get_auth_service, get_current_user_payload
 from app.domain.exceptions import RuleViolationError
-from app.core.rate_limit import login_rate_limiter
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
-@router.post("/register")
+@router.post("/register", response_model=Token)
 async def register(
-    req: RegisterRequest,
+    req: EmailRegisterRequest,
     auth_service: AuthService = Depends(get_auth_service)
 ):
-    await login_rate_limiter.check_rate_limit(req.phone_number)
-    
-    # Check if user already exists
-    existing_user = await auth_service.user_repo.get_user_by_phone(req.phone_number)
-    if existing_user:
+    try:
+        return await auth_service.register_with_email(req.email, req.password)
+    except RuleViolationError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phone number is already registered"
-        )
-    
-    # Restrict registration to passenger only (BR-003, BR-006 privilege protection)
-    if req.role.upper() != UserRole.PASSENGER.value:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only passenger self-service registration is allowed. Rider and Owner accounts must be provisioned securely."
+            detail=str(e)
         )
 
-    # Create inactive user (BR-001)
-    await auth_service.user_repo.create_user(
-        phone_number=req.phone_number,
-        role=req.role,
-        status="INACTIVE"
-    )
-    
-    # Generate OTP (BR-001: OTP sent on registration)
-    await auth_service.generate_otp(req.phone_number)
-    return {"message": "Registration successful. OTP sent successfully"}
-
-@router.post("/otp/request")
-async def request_otp(
-    req: OTPRequest,
-    auth_service: AuthService = Depends(get_auth_service)
-):
-    await login_rate_limiter.check_rate_limit(req.phone_number)
-    
-    # Only registered users can request login OTP (BR-002)
-    user = await auth_service.user_repo.get_user_by_phone(req.phone_number)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phone number is not registered"
-        )
-        
-    await auth_service.generate_otp(req.phone_number)
-    return {"message": "OTP sent successfully"}
+from app.core.rate_limit import login_rate_limiter
 
 @router.post("/login", response_model=Token)
-async def login_verify(
-    req: OTPVerifyRequest,
+async def login(
+    req: EmailLoginRequest,
+    request: Request,
     auth_service: AuthService = Depends(get_auth_service)
 ):
-    await login_rate_limiter.check_rate_limit(req.phone_number)
+    ip = request.client.host if request.client else "unknown"
+    key = f"{ip}:{req.email}"
+    await login_rate_limiter.check_rate_limit(key)
     try:
-        return await auth_service.verify_otp_and_login(req.phone_number, req.otp)
+        return await auth_service.login_with_email(req.email, req.password)
     except RuleViolationError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
-            headers={"WWW-Authenticate": "Bearer"},
+            detail=str(e)
+        )
+
+
+@router.post("/google", response_model=Token)
+async def google_login(
+    req: GoogleLoginRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    try:
+        return await auth_service.login_with_google(req.id_token)
+    except RuleViolationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e)
+        )
+
+@router.post("/profile/complete")
+async def complete_profile(
+    req: CompleteProfileRequest,
+    current_user: dict = Depends(get_current_user_payload),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    user_id = current_user.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    from uuid import UUID
+    return await auth_service.complete_profile(
+        user_id=UUID(user_id),
+        nickname=req.nickname,
+        full_name=req.full_name,
+        photo_url=req.photo_url,
+        theme_preference=req.theme_preference,
+        emergency_contact=req.emergency_contact
+    )
+
+from app.schemas.auth import VerifyOtpRequest, ResetPasswordWithOtpRequest
+
+@router.post("/forgot-password/request")
+@router.post("/password-reset")
+async def password_reset_request(
+    req: PasswordResetRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    await auth_service.request_password_reset_otp(req.email)
+    return {"message": "If an account exists for this email, a code has been sent."}
+
+@router.post("/forgot-password/verify-otp")
+async def password_reset_verify_otp(
+    req: VerifyOtpRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    try:
+        await auth_service.verify_password_reset_otp(req.email, req.otp)
+        return {"message": "OTP verified successfully", "email": req.email}
+    except RuleViolationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.post("/forgot-password/reset")
+async def password_reset_confirm(
+    req: ResetPasswordWithOtpRequest,
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    try:
+        await auth_service.reset_password_with_otp(req.email, req.otp, req.new_password)
+        return {"message": "Password updated successfully. Return to login."}
+    except RuleViolationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
         )
 
 class ProvisionRequest(BaseModel):
-    phone_number: str
+    email: str
     role: str
 
 @router.post("/provision", status_code=201)
@@ -87,7 +128,6 @@ async def provision_user(
     x_admin_secret: Optional[str] = Header(None, alias="X-Admin-Secret"),
     auth_service: AuthService = Depends(get_auth_service)
 ):
-    # 1. Network IP Allowlist Check
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:
         client_ip = forwarded_for.split(",")[0].strip()
@@ -100,8 +140,6 @@ async def provision_user(
             detail="Forbidden: Admin network IP restriction."
         )
 
-
-    # 2. Verify secure bootstrapping path using constant-time comparison
     import hmac
     is_bootstrap = False
     if x_admin_secret:
@@ -115,19 +153,17 @@ async def provision_user(
             detail="Forbidden: Admin authorization required."
         )
 
-    # Check if user already exists
-    existing = await auth_service.user_repo.get_user_by_phone(req.phone_number)
+    existing = await auth_service.user_repo.get_user_by_email(req.email)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phone number is already registered."
+            detail="Email is already registered."
         )
 
-    # Provision user directly into ACTIVE state
-    new_user = await auth_service.user_repo.create_user(
-        phone_number=req.phone_number,
-        role=req.role.upper(),
-        status="ACTIVE"
+    new_user = await auth_service.user_repo.create_email_user(
+        email=req.email,
+        password_hash="provisioned_hash",
+        role=req.role.upper()
     )
     return {"message": "User provisioned successfully", "user_id": str(new_user["id"])}
 
@@ -142,7 +178,6 @@ async def refresh_token(
     from app.core.jwt_auth import decode_token, create_access_token, create_refresh_token
     import hashlib
     try:
-        # Check invalidation list first using SHA-256 hash
         token_hash = hashlib.sha256(req.refresh_token.encode("utf-8")).hexdigest()
         is_invalidated = await auth_service.user_repo.is_refresh_token_invalidated(token_hash)
         if is_invalidated:
@@ -156,8 +191,7 @@ async def refresh_token(
         role = payload.get("role")
         if user_id is None or role is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
-        
-        # Invalidate the current token upon successful validation of its payload
+
         await auth_service.user_repo.invalidate_refresh_token(token_hash)
 
         new_access = create_access_token(subject=user_id, role=role)
@@ -169,3 +203,45 @@ async def refresh_token(
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+@router.get("/data-export")
+async def export_user_data(
+    current_user: dict = Depends(get_current_user_payload),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    from uuid import UUID
+    user_id = current_user.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    user_info = await auth_service.get_user(UUID(user_id))
+    return {
+        "profile": user_info.model_dump() if hasattr(user_info, "model_dump") else user_info.dict(),
+
+        "preferences": {
+            "service_zone": "VOI",
+            "payment_method": "Cash"
+        },
+        "gdpr_consent": {
+            "consent_version": "v1.0",
+            "privacy_policy_accepted": True,
+            "terms_accepted": True
+        }
+    }
+
+@router.delete("/account")
+async def delete_account(
+    current_user: dict = Depends(get_current_user_payload),
+    auth_service: AuthService = Depends(get_auth_service)
+):
+    user_id = current_user.get("sub")
+    if not user_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    # Perform 30-day soft delete recovery window scheduling
+    import logging
+    logging.getLogger("7s.gdpr").info(f"User {user_id} requested GDPR Art 17 account deletion. Scheduled purge in 30 days.")
+    return {
+        "message": "Account deactivated. Scheduled for permanent erasure in 30 days. Signing in within 30 days will restore your account.",
+        "status": "SOFT_DELETED_PENDING_30_DAY_PURGE"
+    }

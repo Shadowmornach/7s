@@ -5,8 +5,14 @@ class ApiEndpoints {
   // Auth (Argon2id + JWT)
   static const String authRegister = '/auth/register';
   static const String authLogin = '/auth/login';
-  static const String authOtpRequest = '/auth/otp/request';
+  static const String authGoogle = '/auth/google';
+  static const String authProfileComplete = '/auth/profile/complete';
   static const String refreshToken = '/auth/refresh';
+
+  // Forgot Password (OTP flow)
+  static const String authForgotPasswordRequest = '/auth/forgot-password/request';
+  static const String authForgotPasswordVerifyOtp = '/auth/forgot-password/verify-otp';
+  static const String authForgotPasswordReset = '/auth/forgot-password/reset';
 
   // Passenger & Rides
   static const String ridesQuote = '/api/v1/fare-templates/quote';

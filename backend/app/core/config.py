@@ -5,7 +5,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Existing
     DATABASE_URL: SecretStr
-    SUPABASE_SERVICE_ROLE_KEY: SecretStr
     DEBUG: bool = False
 
     # Auth
@@ -20,6 +19,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     ENVIRONMENT: str = "development"
     # External Services
+    SUPABASE_URL: Optional[str] = None
     ORS_API_KEY: Optional[SecretStr] = None
     AT_USERNAME: Optional[str] = None
     AT_API_KEY: Optional[SecretStr] = None
