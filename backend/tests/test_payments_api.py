@@ -197,11 +197,11 @@ async def test_bambastack_callback_success(payment_service, mock_deps):
     p_repo.insert_payment_event.return_value = {"id": str(uuid4())}
     r_repo.get_ride.return_value = RideResponse(
         id=ride_id, passenger_id=uuid4(), rider_id=None, status="IN_PROGRESS",
-        payment_status="SUCCESS", version=3, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
+        payment_status="PENDING", version=3, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
     )
 
     callback_payload = BambaStackCallbackPayload(
-        checkout_request_id="chk-bamba-001",
+        checkout_request_id="chk-bamba-success-001",
         ResultCode=0,
         ResultDesc="The service request is processed successfully.",
         MpesaReceiptNumber="RHE12ABC3D"
@@ -216,6 +216,130 @@ async def test_bambastack_callback_success(payment_service, mock_deps):
     assert call_args.payment_event_type == "PAYMENT_SUCCESS"
     assert call_args.mpesa_receipt == "RHE12ABC3D"
 
+    # Reset cooldown so this doesn't break other tests for the same checkout_id
+    from app.core.rate_limit import webhook_payment_cooldown
+    webhook_payment_cooldown._history.pop("chk-bamba-001", None)
+
+@pytest.mark.asyncio
+async def test_bambastack_callback_terminal_payment_deduplication(payment_service, mock_deps):
+    """Terminal payment deduplication: SUCCESS/FAILED/CANCELLED ride blocks provider lookup."""
+    p_repo, r_repo, u_repo, bambastack, pubsub = mock_deps
+    ride_id = uuid4()
+    
+    p_repo.get_payment_by_checkout_request_id.return_value = {
+        "id": str(uuid4()), "ride_id": str(ride_id), "amount": 350.0, "phone_number_used": "0712345678"
+    }
+    
+    # Ride is already SUCCESS
+    r_repo.get_ride.return_value = RideResponse(
+        id=ride_id, passenger_id=uuid4(), rider_id=None, status="COMPLETED",
+        payment_status="SUCCESS", version=3, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
+    )
+
+    callback_payload = BambaStackCallbackPayload(
+        checkout_request_id="chk-bamba-terminal-001",
+        ResultCode=0,
+        ResultDesc="The service request is processed successfully."
+    )
+
+    res = await payment_service.handle_bambastack_callback(callback_payload)
+    
+    # Webhook ignored harmlessly
+    assert res["status"] == "ignored"
+    assert res["reason"] == "payment_already_terminal"
+    
+    # Provider status NOT fetched!
+    bambastack.get_payment_status.assert_not_called()
+    p_repo.insert_payment_event.assert_not_called()
+
+    # Reset cooldown
+    from app.core.rate_limit import webhook_payment_cooldown
+    webhook_payment_cooldown._history.pop("chk-bamba-terminal-001", None)
+
+@pytest.mark.asyncio
+async def test_bambastack_callback_cooldown(payment_service, mock_deps):
+    """Cooldown prevents back-to-back webhook processing for the same payment attempt."""
+    p_repo, r_repo, u_repo, bambastack, pubsub = mock_deps
+    ride_id = uuid4()
+    
+    p_repo.get_payment_by_checkout_request_id.return_value = {
+        "id": str(uuid4()), "ride_id": str(ride_id), "amount": 350.0, "phone_number_used": "0712345678"
+    }
+    
+    # Ride is PENDING
+    r_repo.get_ride.return_value = RideResponse(
+        id=ride_id, passenger_id=uuid4(), rider_id=None, status="IN_PROGRESS",
+        payment_status="PENDING", version=3, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
+    )
+    bambastack.get_payment_status.return_value = {"status": "paid", "amount": 350.0}
+
+    callback_payload = BambaStackCallbackPayload(
+        checkout_request_id="chk-bamba-cooldown",
+        ResultCode=0,
+        ResultDesc="The service request is processed successfully."
+    )
+
+    # 1. First request processes normally
+    res1 = await payment_service.handle_bambastack_callback(callback_payload)
+    assert res1["status"] == "processed"
+    assert bambastack.get_payment_status.call_count == 1
+    
+    # 2. Immediate second request is blocked by cooldown
+    res2 = await payment_service.handle_bambastack_callback(callback_payload)
+    assert res2["status"] == "ignored"
+    assert res2["reason"] == "cooldown"
+    
+    # BambaStack was still only called ONCE
+    assert bambastack.get_payment_status.call_count == 1
+
+    # Reset cooldown
+    from app.core.rate_limit import webhook_payment_cooldown
+    webhook_payment_cooldown._history.pop("chk-bamba-cooldown", None)
+
+@pytest.mark.asyncio
+async def test_bambastack_callback_concurrency(payment_service, mock_deps):
+    """Concurrent webhooks for the same checkout_request_id only trigger exactly ONE provider lookup."""
+    import asyncio
+    p_repo, r_repo, u_repo, bambastack, pubsub = mock_deps
+    ride_id = uuid4()
+    
+    p_repo.get_payment_by_checkout_request_id.return_value = {
+        "id": str(uuid4()), "ride_id": str(ride_id), "amount": 350.0, "phone_number_used": "0712345678"
+    }
+    r_repo.get_ride.return_value = RideResponse(
+        id=ride_id, passenger_id=uuid4(), rider_id=None, status="IN_PROGRESS",
+        payment_status="PENDING", version=3, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
+    )
+    # Slow down the provider call slightly to ensure concurrent requests overlap
+    async def delayed_status(*args, **kwargs):
+        await asyncio.sleep(0.01)
+        return {"status": "paid", "amount": 350.0}
+        
+    bambastack.get_payment_status.side_effect = delayed_status
+
+    callback_payload = BambaStackCallbackPayload(
+        checkout_request_id="chk-bamba-concurrent",
+        ResultCode=0,
+        ResultDesc="Success"
+    )
+
+    # Fire 50 concurrent requests
+    tasks = [payment_service.handle_bambastack_callback(callback_payload) for _ in range(50)]
+    results = await asyncio.gather(*tasks)
+    
+    processed_count = sum(1 for r in results if r.get("status") == "processed")
+    ignored_count = sum(1 for r in results if r.get("status") == "ignored" and r.get("reason") == "cooldown")
+    
+    # Exactly one request must be processed, 49 must be blocked by cooldown
+    assert processed_count == 1
+    assert ignored_count == 49
+    
+    # BambaStack must be called exactly ONCE
+    assert bambastack.get_payment_status.call_count == 1
+
+    # Reset cooldown
+    from app.core.rate_limit import webhook_payment_cooldown
+    webhook_payment_cooldown._history.pop("chk-bamba-concurrent", None)
 
 @pytest.mark.asyncio
 async def test_bambastack_callback_failure(payment_service, mock_deps):
@@ -230,11 +354,11 @@ async def test_bambastack_callback_failure(payment_service, mock_deps):
     p_repo.insert_payment_event.return_value = {"id": str(uuid4())}
     r_repo.get_ride.return_value = RideResponse(
         id=ride_id, passenger_id=uuid4(), rider_id=None, status="IN_PROGRESS",
-        payment_status="FAILED", version=3, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
+        payment_status="PENDING", version=3, created_at=datetime.now(timezone.utc), updated_at=datetime.now(timezone.utc)
     )
 
     callback_payload = BambaStackCallbackPayload(
-        checkout_request_id="chk-bamba-002",
+        checkout_request_id="chk-bamba-fail-002",
         ResultCode=1032,
         ResultDesc="[STK_CB - ]Request cancelled by user"
     )
@@ -332,7 +456,7 @@ async def test_bambastack_callback_duplicate_idempotent(payment_service, mock_de
     p_repo.insert_payment_event.side_effect = asyncpg.exceptions.RaiseError("Cannot create PAYMENT_SUCCESS — payment already succeeded (BR-010).")
 
     callback_payload = BambaStackCallbackPayload(
-        checkout_request_id="chk-bamba-001",
+        checkout_request_id="chk-bamba-dup-001",
         ResultCode=0,
         ResultDesc="Success",
         MpesaReceiptNumber="RHE12ABC3D"
@@ -414,6 +538,41 @@ def test_bambastack_webhook_not_found_payment():
     finally:
         app.dependency_overrides.clear()
 
+def test_bambastack_webhook_ip_rate_limit():
+    """Webhook IP rate limiter blocks excessive requests."""
+    from app.core.rate_limit import webhook_ip_rate_limiter
+    client = starlette.testclient.TestClient(app)
+    mock_service = AsyncMock()
+    mock_service.handle_bambastack_callback.return_value = {"status": "processed"}
+    app.dependency_overrides[get_payment_service] = lambda: mock_service
+    
+    original_max = webhook_ip_rate_limiter.max_calls
+    webhook_ip_rate_limiter.max_calls = 3  # Temporarily lower limit
+    webhook_ip_rate_limiter._history.clear()
+    
+    try:
+        # 3 allowed requests
+        for _ in range(3):
+            resp = client.post(
+                "/api/v1/payments/bambastack/webhook",
+                json={"checkout_request_id": "chk-ip-test", "ResultCode": 0, "ResultDesc": "Success"},
+                headers={"X-Forwarded-For": "192.168.1.100"}  # Note: TestClient passes this to request.client.host depending on config, but it's simpler to rely on starlette setting host to 'testclient'
+            )
+            assert resp.status_code == 200
+            
+        # 4th request blocked
+        resp = client.post(
+            "/api/v1/payments/bambastack/webhook",
+            json={"checkout_request_id": "chk-ip-test", "ResultCode": 0, "ResultDesc": "Success"}
+        )
+        assert resp.status_code == 429
+        assert resp.json()["detail"]["error_code"] == "RATE_LIMIT_EXCEEDED"
+        
+        # Verify handle_bambastack_callback was ONLY called 3 times
+        assert mock_service.handle_bambastack_callback.call_count == 3
+    finally:
+        app.dependency_overrides.clear()
+        webhook_ip_rate_limiter.max_calls = original_max
 
 # ===========================================================================
 # 4. PROVIDER-NEUTRAL PAYMENT TESTS (Cash, Dispute, Refund, Status)

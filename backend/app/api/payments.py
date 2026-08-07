@@ -45,8 +45,11 @@ async def initiate_stk_push(
             status_code = status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=status_code, detail={"error_code": e.code, "message": str(e)})
 
+from app.core.rate_limit import webhook_ip_rate_limiter
+
 @router.post("/bambastack/webhook")
 async def bambastack_webhook(
+    request: Request,
     payload: BambaStackCallbackPayload,
     payment_service: PaymentService = Depends(get_payment_service)
 ):
@@ -64,6 +67,9 @@ async def bambastack_webhook(
     Idempotency: Duplicate callbacks for the same checkout_request_id are safely
     rejected by the database trigger (BR-010).
     """
+    client_ip = request.client.host if request.client else "unknown"
+    await webhook_ip_rate_limiter.check_rate_limit(client_ip)
+
     try:
         return await payment_service.handle_bambastack_callback(payload)
     except ResourceNotFoundError as e:

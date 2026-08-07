@@ -127,9 +127,16 @@ class PaymentService:
         Idempotency: If the ride already has payment_status=SUCCESS, the DB trigger
         rejects duplicate SUCCESS events (BR-010), and we return 'ignored'.
         """
+        from app.core.rate_limit import webhook_payment_cooldown
+
         checkout_request_id = payload.checkout_request_id
         result_code = payload.ResultCode
         result_desc = payload.ResultDesc
+
+        # Concurrency/Cooldown Check
+        if not await webhook_payment_cooldown.check_allow(checkout_request_id):
+            logger.warning(f"Payment webhook cooldown active for {checkout_request_id}")
+            return {"status": "ignored", "reason": "cooldown"}
 
         # Correlate callback to an existing 7s payment attempt
         attempt_event = await self.payment_repo.get_payment_by_checkout_request_id(checkout_request_id)
@@ -140,6 +147,12 @@ class PaymentService:
         ride_id = UUID(str(attempt_event["ride_id"]))
         reference = str(ride_id)
         raw_callback_dict = payload.model_dump(mode='json')
+
+        # Terminal Deduplication Check (Layer 2)
+        ride = await self.ride_repo.get_ride(ride_id)
+        if ride.payment_status in _TERMINAL_PAYMENT_STATUSES:
+            logger.info(f"Payment webhook ignored - payment {ride_id} is already in terminal state {ride.payment_status}")
+            return {"status": "ignored", "reason": "payment_already_terminal"}
 
         # AUTHORITATIVE VERIFICATION
         # Do not trust the webhook ResultCode. Fetch authoritative status from BambaStack.
