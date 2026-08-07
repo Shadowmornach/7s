@@ -138,33 +138,64 @@ class PaymentService:
             raise ResourceNotFoundError(f"Payment attempt for checkout_request_id {checkout_request_id} not found")
 
         ride_id = UUID(str(attempt_event["ride_id"]))
+        reference = str(ride_id)
         raw_callback_dict = payload.model_dump(mode='json')
 
-        if result_code == 0:
-            # Payment Successful
-            mpesa_receipt = payload.MpesaReceiptNumber
-            amount = attempt_event.get("amount")
-            phone_used = attempt_event.get("phone_number_used")
+        # AUTHORITATIVE VERIFICATION
+        # Do not trust the webhook ResultCode. Fetch authoritative status from BambaStack.
+        try:
+            bambastack_status = await self.bambastack.get_payment_status(reference)
+            provider_status = str(bambastack_status.get("status", "")).lower()
+        except Exception as e:
+            logger.error(f"Failed to verify authoritative BambaStack status for reference {reference}: {e}")
+            return {"status": "ignored", "reason": "provider_verification_failed"}
+
+        event_dto = None
+
+        if provider_status == "paid":
+            # Payment Successful according to authoritative provider
+            provider_amount = bambastack_status.get("amount")
+            expected_amount = attempt_event.get("amount")
+
+            if provider_amount is not None and expected_amount is not None:
+                if float(provider_amount) != float(expected_amount):
+                    logger.warning(f"Payment amount mismatch: checkout_request_id={checkout_request_id}, reference={reference}, provider_amount={provider_amount}, expected_amount={expected_amount}")
+                    return {"status": "ignored", "reason": "amount_mismatch"}
+
+            mpesa_receipt = payload.MpesaReceiptNumber or bambastack_status.get("receipt_number")
+
+            if result_code != 0:
+                logger.warning(f"Payment webhook mismatch (Provider PAID but ResultCode!=0): checkout_request_id={checkout_request_id}, reference={reference}")
 
             event_dto = PaymentEventCreate(
                 ride_id=ride_id,
                 payment_event_type="PAYMENT_SUCCESS",
                 mpesa_receipt=mpesa_receipt,
-                phone_number_used=phone_used,
-                amount=amount,
+                phone_number_used=attempt_event.get("phone_number_used"),
+                amount=expected_amount,
                 raw_callback=raw_callback_dict,
                 metadata={"payment_method": "MPESA", "CheckoutRequestID": checkout_request_id, "ResultDesc": result_desc, "provider": "BAMBASTACK"}
             )
-        else:
-            # Payment Failed or Cancelled
+        elif provider_status in ("failed", "cancelled"):
+            # Payment Failed or Cancelled according to authoritative provider
+            if result_code == 0:
+                logger.warning(f"Payment webhook success mismatch: checkout_request_id={checkout_request_id}, reference={reference}, provider_status={provider_status}")
+
             event_dto = PaymentEventCreate(
                 ride_id=ride_id,
                 payment_event_type="PAYMENT_FAILED",
                 phone_number_used=attempt_event.get("phone_number_used"),
                 amount=attempt_event.get("amount"),
                 raw_callback=raw_callback_dict,
-                metadata={"CheckoutRequestID": checkout_request_id, "ResultCode": result_code, "ResultDesc": result_desc, "provider": "BAMBASTACK"}
+                metadata={"CheckoutRequestID": checkout_request_id, "ResultCode": result_code, "ResultDesc": result_desc, "provider": "BAMBASTACK", "provider_status": provider_status}
             )
+        elif provider_status == "pending":
+            if result_code == 0:
+                logger.warning(f"Payment webhook success mismatch: checkout_request_id={checkout_request_id}, reference={reference}, provider_status={provider_status}")
+            return {"status": "ignored", "reason": "provider_status_pending"}
+        else:
+            logger.warning(f"Unknown BambaStack payment status '{provider_status}' for reference {reference}")
+            return {"status": "ignored", "reason": "unknown_provider_status"}
 
         try:
             inserted_event = await self.payment_repo.insert_payment_event(event_dto)

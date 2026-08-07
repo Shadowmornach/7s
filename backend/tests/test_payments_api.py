@@ -186,13 +186,14 @@ async def test_stk_push_duplicate_reference(payment_service, mock_deps):
 
 @pytest.mark.asyncio
 async def test_bambastack_callback_success(payment_service, mock_deps):
-    """Successful BambaStack callback (ResultCode=0) creates PAYMENT_SUCCESS event."""
+    """Successful BambaStack callback AND authoritative status 'paid' creates PAYMENT_SUCCESS event."""
     p_repo, r_repo, u_repo, bambastack, pubsub = mock_deps
     ride_id = uuid4()
 
     p_repo.get_payment_by_checkout_request_id.return_value = {
         "id": str(uuid4()), "ride_id": str(ride_id), "amount": 350.0, "phone_number_used": "0712345678"
     }
+    bambastack.get_payment_status.return_value = {"status": "paid", "amount": 350.0}
     p_repo.insert_payment_event.return_value = {"id": str(uuid4())}
     r_repo.get_ride.return_value = RideResponse(
         id=ride_id, passenger_id=uuid4(), rider_id=None, status="IN_PROGRESS",
@@ -209,6 +210,7 @@ async def test_bambastack_callback_success(payment_service, mock_deps):
     res = await payment_service.handle_bambastack_callback(callback_payload)
     assert res["status"] == "processed"
     p_repo.insert_payment_event.assert_called_once()
+    bambastack.get_payment_status.assert_called_once_with(str(ride_id))
     # Verify the event type is PAYMENT_SUCCESS
     call_args = p_repo.insert_payment_event.call_args[0][0]
     assert call_args.payment_event_type == "PAYMENT_SUCCESS"
@@ -217,13 +219,14 @@ async def test_bambastack_callback_success(payment_service, mock_deps):
 
 @pytest.mark.asyncio
 async def test_bambastack_callback_failure(payment_service, mock_deps):
-    """Failed BambaStack callback (ResultCode!=0) creates PAYMENT_FAILED event."""
+    """Failed BambaStack callback creates PAYMENT_FAILED event based on authoritative provider status."""
     p_repo, r_repo, u_repo, bambastack, pubsub = mock_deps
     ride_id = uuid4()
 
     p_repo.get_payment_by_checkout_request_id.return_value = {
         "id": str(uuid4()), "ride_id": str(ride_id), "amount": 350.0, "phone_number_used": "0712345678"
     }
+    bambastack.get_payment_status.return_value = {"status": "failed"}
     p_repo.insert_payment_event.return_value = {"id": str(uuid4())}
     r_repo.get_ride.return_value = RideResponse(
         id=ride_id, passenger_id=uuid4(), rider_id=None, status="IN_PROGRESS",
@@ -240,6 +243,56 @@ async def test_bambastack_callback_failure(payment_service, mock_deps):
     assert res["status"] == "processed"
     call_args = p_repo.insert_payment_event.call_args[0][0]
     assert call_args.payment_event_type == "PAYMENT_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_bambastack_callback_forged_success(payment_service, mock_deps):
+    """Forged successful webhook (ResultCode=0) but provider is pending/failed is rejected."""
+    p_repo, r_repo, u_repo, bambastack, pubsub = mock_deps
+    ride_id = uuid4()
+
+    p_repo.get_payment_by_checkout_request_id.return_value = {
+        "id": str(uuid4()), "ride_id": str(ride_id), "amount": 350.0, "phone_number_used": "0712345678"
+    }
+    bambastack.get_payment_status.return_value = {"status": "pending"}
+
+    callback_payload = BambaStackCallbackPayload(
+        checkout_request_id="chk-bamba-forged",
+        ResultCode=0,
+        ResultDesc="Success",
+        MpesaReceiptNumber="FAKE"
+    )
+
+    res = await payment_service.handle_bambastack_callback(callback_payload)
+
+    assert res["status"] == "ignored"
+    assert res["reason"] == "provider_status_pending"
+    p_repo.insert_payment_event.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_bambastack_callback_amount_mismatch(payment_service, mock_deps):
+    """Successful webhook but authoritative provider amount differs from expected amount."""
+    p_repo, r_repo, u_repo, bambastack, pubsub = mock_deps
+    ride_id = uuid4()
+
+    p_repo.get_payment_by_checkout_request_id.return_value = {
+        "id": str(uuid4()), "ride_id": str(ride_id), "amount": 350.0, "phone_number_used": "0712345678"
+    }
+    # Provider reports only 1 KES was paid
+    bambastack.get_payment_status.return_value = {"status": "paid", "amount": 1.0}
+
+    callback_payload = BambaStackCallbackPayload(
+        checkout_request_id="chk-bamba-amount-mismatch",
+        ResultCode=0,
+        ResultDesc="Success"
+    )
+
+    res = await payment_service.handle_bambastack_callback(callback_payload)
+
+    assert res["status"] == "ignored"
+    assert res["reason"] == "amount_mismatch"
+    p_repo.insert_payment_event.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -273,6 +326,8 @@ async def test_bambastack_callback_duplicate_idempotent(payment_service, mock_de
     p_repo.get_payment_by_checkout_request_id.return_value = {
         "id": str(uuid4()), "ride_id": str(ride_id), "amount": 350.0, "phone_number_used": "0712345678"
     }
+    bambastack.get_payment_status.return_value = {"status": "paid", "amount": 350.0}
+
     # DB trigger rejects duplicate SUCCESS
     p_repo.insert_payment_event.side_effect = asyncpg.exceptions.RaiseError("Cannot create PAYMENT_SUCCESS — payment already succeeded (BR-010).")
 
