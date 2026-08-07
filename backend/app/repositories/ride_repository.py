@@ -79,42 +79,59 @@ class RideRepository:
     async def create_ride(self, passenger_id: UUID, payload: RideRequestPayload, booking_type: str) -> RideResponse:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                WITH new_ride AS (
+            async with conn.transaction():
+                # 1. Insert the ride first so it is visible to the event trigger
+                row = await conn.fetchrow(
+                    """
                     INSERT INTO rides (passenger_id, pickup_lat, pickup_lng, destination_lat, destination_lng, pickup_place_id, destination_place_id, booking_type, preferred_payment_method)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    RETURNING id, passenger_id, rider_id, status, payment_status, version, created_at, updated_at
-                ),
-                new_event AS (
-                    INSERT INTO ride_events (ride_id, ride_event_type, actor_id, metadata)
-                    SELECT id, 'RIDE_REQUESTED', passenger_id, '{}'::jsonb
-                    FROM new_ride
+                    RETURNING id
+                    """,
+                    str(passenger_id),
+                    Decimal(str(payload.pickup_lat)),
+                    Decimal(str(payload.pickup_lng)),
+                    Decimal(str(payload.destination_lat)),
+                    Decimal(str(payload.destination_lng)),
+                    str(payload.pickup_place_id) if payload.pickup_place_id else None,
+                    str(payload.destination_place_id) if payload.destination_place_id else None,
+                    booking_type,
+                    payload.preferred_payment_method
                 )
-                SELECT * FROM new_ride
-                """,
-                str(passenger_id),
-                Decimal(str(payload.pickup_lat)),
-                Decimal(str(payload.pickup_lng)),
-                Decimal(str(payload.destination_lat)),
-                Decimal(str(payload.destination_lng)),
-                str(payload.pickup_place_id) if payload.pickup_place_id else None,
-                str(payload.destination_place_id) if payload.destination_place_id else None,
-                booking_type,
-                payload.preferred_payment_method
-            )
+
+                ride_id = row["id"]
+
+                # 2. Insert the event, triggering the state machine update on the ride
+                await conn.execute(
+                    """
+                    INSERT INTO ride_events (ride_id, ride_event_type, actor_id, metadata)
+                    VALUES ($1, 'RIDE_REQUESTED', $2, '{}'::jsonb)
+                    """,
+                    ride_id,
+                    str(passenger_id)
+                )
+                
+                # 3. Fetch the final updated ride state
+                final_row = await conn.fetchrow(
+                    """
+                    SELECT id, passenger_id, rider_id, status, payment_status, version, created_at, updated_at
+                    FROM rides
+                    WHERE id = $1
+                    """,
+                    ride_id
+                )
+                
             return RideResponse(
-                id=row["id"],
-                passenger_id=row["passenger_id"],
-                rider_id=row["rider_id"],
-                status=row["status"],
-                payment_status=row["payment_status"],
-                version=row["version"],
+                id=final_row["id"],
+                passenger_id=final_row["passenger_id"],
+                rider_id=final_row["rider_id"],
+                status=final_row["status"],
+                payment_status=final_row["payment_status"],
+                version=final_row["version"],
                 active_sos_id=None,
                 active_sos_severity=None,
                 active_sos_status=None,
-                created_at=row["created_at"],
-                updated_at=row["updated_at"]
+                created_at=final_row["created_at"],
+                updated_at=final_row["updated_at"]
             )
 
     async def get_all_rides(self, limit: int = 50, offset: int = 0) -> list[RideResponse]:
