@@ -4,6 +4,14 @@ from app.db.connection import db
 
 router = APIRouter(tags=["Health"])
 
+@router.get("/")
+async def root():
+    return {
+        "name": "7s Backend API",
+        "status": "online",
+        "version": "1.0.0"
+    }
+
 @router.get("/health")
 async def health():
     return {"status": "healthy"}
