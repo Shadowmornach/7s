@@ -42,3 +42,6 @@ serviceAccount*.json
 # Backups & Dumps
 *_backup*/
 *.bak
+
+# Postman Collections
+BambaStack_7s_delivery_Collection.json
