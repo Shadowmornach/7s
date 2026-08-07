@@ -43,3 +43,66 @@ def decode_token(token: str, token_type: str = "access") -> dict:
         raise RuleViolationError("Token has expired.")
     except jwt.InvalidTokenError:
         raise RuleViolationError("Invalid token.")
+
+# Supabase Auth JWKS Client
+SUPABASE_JWKS_URI = "https://gwrroyzilnjpdntaybpk.supabase.co/auth/v1/.well-known/jwks.json"
+SUPABASE_ISSUER = "https://gwrroyzilnjpdntaybpk.supabase.co/auth/v1"
+jwks_client = jwt.PyJWKClient(SUPABASE_JWKS_URI)
+
+def decode_supabase_token(token: str) -> dict:
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+        if unverified_header.get("alg") != "ES256":
+            raise RuleViolationError("Invalid token algorithm. Expected ES256.")
+            
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+        
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256"],
+            issuer=SUPABASE_ISSUER,
+            audience="authenticated"
+        )
+        
+        sub = payload.get("sub")
+        if not sub:
+            raise RuleViolationError("Missing subject in token.")
+            
+        import uuid
+        try:
+            uuid.UUID(sub)
+        except ValueError:
+            raise RuleViolationError("Invalid subject format in token.")
+            
+        return payload
+    except jwt.PyJWKClientError:
+        raise RuleViolationError("Unable to fetch JWKS to verify token.")
+    except jwt.ExpiredSignatureError:
+        raise RuleViolationError("Token has expired.")
+    except jwt.InvalidTokenError:
+        raise RuleViolationError("Invalid token.")
+
+def verify_auth_token(token: str) -> dict:
+    try:
+        header = jwt.get_unverified_header(token)
+    except jwt.DecodeError:
+        raise RuleViolationError("Malformed token.")
+
+    alg = header.get("alg")
+    
+    if alg == "ES256":
+        payload = decode_supabase_token(token)
+        return {
+            "sub": payload["sub"],
+            "provider": "supabase"
+        }
+    elif alg == "HS256":
+        payload = decode_token(token)
+        return {
+            "sub": payload["sub"],
+            "role": payload.get("role"),
+            "provider": "legacy"
+        }
+    else:
+        raise RuleViolationError(f"Unsupported token algorithm: {alg}")

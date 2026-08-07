@@ -78,14 +78,30 @@ def get_operations_service() -> OperationsService:
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenPayload:
     try:
-        payload = decode_token(token)
-        user_id = payload.get("sub")
-        role = payload.get("role")
-        if user_id is None or role is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
-        return TokenPayload(sub=user_id, role=role)
+        from app.core.jwt_auth import verify_auth_token
+        
+        token_data = verify_auth_token(token)
+        user_id = token_data["sub"]
+        provider = token_data["provider"]
+        
+        if provider == "supabase":
+            user_repo = UserRepository()
+            user = await user_repo.get_user_by_id(UUID(user_id))
+            if not user:
+                raise RuleViolationError("User not found.")
+            
+            authoritative_role = user.get("role", "PASSENGER")
+            return TokenPayload(sub=user_id, role=authoritative_role)
+        else:
+            role = token_data.get("role")
+            if not role:
+                raise RuleViolationError("Invalid legacy token payload.")
+            return TokenPayload(sub=user_id, role=role)
+            
     except RuleViolationError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid subject format.")
 
 get_current_user_payload = get_current_user
 
