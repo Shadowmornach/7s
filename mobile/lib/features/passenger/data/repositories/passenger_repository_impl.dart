@@ -90,7 +90,7 @@ class PassengerRepositoryImpl implements PassengerRepository {
 
   @override
   Future<List<Map<String, dynamic>>> getBackendPaymentMethods() async {
-    // Backend-driven payment method list (Cash, M-Pesa Daraja, Card)
+    // Backend-driven payment method list (Cash, M-Pesa, Card)
     return [
       {'id': 'mpesa', 'name': 'M-Pesa STK Push', 'icon': 'phone_android'},
       {'id': 'cash', 'name': 'Cash Payment', 'icon': 'payments'},

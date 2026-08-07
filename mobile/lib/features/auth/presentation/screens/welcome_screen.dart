@@ -15,65 +15,10 @@ class WelcomeScreen extends StatefulWidget {
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
-  bool _isGoogleSubmitting = false;
-
   static const Color brandOrange = Color(0xFFFA5B16);
   static const Color textNavy = Color(0xFF0F172A);
   static const Color textGray = Color(0xFF64748B);
 
-  Future<void> _handleGoogleSignIn() async {
-    if (_isGoogleSubmitting) return;
-
-    final selectedAccount = await showModalBottomSheet<Map<String, String>>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF121212),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 36,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF334155),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  const WelcomeGoogleIcon(size: 24),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Sign in with Google',
-                    style: GoogleFonts.manrope(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Choose an account',
-                style: GoogleFonts.manrope(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  letterSpacing: -0.4,
-                ),
-              ),
               const SizedBox(height: 6),
               Text.rich(
                 TextSpan(
@@ -639,71 +584,4 @@ class IntegratedFallbackScene extends StatelessWidget {
       ),
     );
   }
-}
-
-class WelcomeGoogleIcon extends StatelessWidget {
-  final double size;
-  const WelcomeGoogleIcon({super.key, this.size = 20});
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size(size, size),
-      painter: _WelcomeGoogleLogoPainter(),
-    );
-  }
-}
-
-class _WelcomeGoogleLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double w = size.width;
-    final double h = size.height;
-    final double cx = w / 2;
-    final double cy = h / 2;
-    final double r = w / 2;
-
-    final bluePaint = Paint()..color = const Color(0xFF4285F4);
-    final greenPaint = Paint()..color = const Color(0xFF34A853);
-    final yellowPaint = Paint()..color = const Color(0xFFFBBC05);
-    final redPaint = Paint()..color = const Color(0xFFEA4335);
-
-    final rect = Rect.fromCircle(center: Offset(cx, cy), radius: r);
-
-    final bluePath = Path()
-      ..moveTo(cx, cy)
-      ..arcTo(rect, -0.4, 1.8, false)
-      ..lineTo(cx, cy);
-    canvas.drawPath(bluePath, bluePaint);
-
-    final greenPath = Path()
-      ..moveTo(cx, cy)
-      ..arcTo(rect, 1.4, 1.4, false)
-      ..lineTo(cx, cy);
-    canvas.drawPath(greenPath, greenPaint);
-
-    final yellowPath = Path()
-      ..moveTo(cx, cy)
-      ..arcTo(rect, 2.8, 1.0, false)
-      ..lineTo(cx, cy);
-    canvas.drawPath(yellowPath, yellowPaint);
-
-    final redPath = Path()
-      ..moveTo(cx, cy)
-      ..arcTo(rect, 3.8, 1.2, false)
-      ..lineTo(cx, cy);
-    canvas.drawPath(redPath, redPaint);
-
-    final innerCirclePaint = Paint()..color = Colors.white;
-    canvas.drawCircle(Offset(cx, cy), r * 0.58, innerCirclePaint);
-
-    final barPaint = Paint()
-      ..color = const Color(0xFF4285F4)
-      ..style = PaintingStyle.fill;
-    final barRect = Rect.fromLTWH(cx, cy - (r * 0.22), r * 0.95, r * 0.44);
-    canvas.drawRect(barRect, barPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

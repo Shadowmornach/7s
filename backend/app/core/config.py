@@ -1,4 +1,4 @@
-from typing import Optional, Literal
+from typing import Optional
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -25,18 +25,10 @@ class Settings(BaseSettings):
     AT_API_KEY: Optional[SecretStr] = None
     AT_SENDER_ID: Optional[str] = None
 
-    
-    # Payments (Daraja STK Push) — Optional until payment flows are invoked
-    DARAJA_ENVIRONMENT: Literal["sandbox", "production"] = "sandbox"
-    DARAJA_CONSUMER_KEY: Optional[SecretStr] = None
-    DARAJA_CONSUMER_SECRET: Optional[SecretStr] = None
-    DARAJA_SHORTCODE: Optional[str] = None
-    DARAJA_PASSKEY: Optional[SecretStr] = None
-    DARAJA_CALLBACK_BASE_URL: Optional[str] = None
-    DARAJA_TIMEOUT_SECONDS: int = 10
-    DARAJA_ALLOWED_IPS: str = "196.201.212.0/22,196.201.214.0/24,127.0.0.1,::1,testclient"
-    ENABLE_DARAJA_IP_VALIDATION: bool = True
-    DARAJA_WEBHOOK_SECRET: Optional[SecretStr] = None
+    # Payments (BambaStack M-Pesa Gateway) — Optional until payment flows are invoked
+    BAMBASTACK_API_KEY: Optional[SecretStr] = None
+    BAMBASTACK_BASE_URL: str = "https://majengo-backend-593721555291.us-central1.run.app"
+    BAMBASTACK_TIMEOUT_SECONDS: int = 15
 
     # Security & CORS
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:8000"

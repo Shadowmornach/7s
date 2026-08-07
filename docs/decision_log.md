@@ -8,7 +8,7 @@ Architectural and design decisions made during the specification phase. Indexed 
 |---|---|---|---|---|
 | DL-001 | No per-ride OTP — login OTP only | Too much friction for a motorcycle taxi in a small town; rider identity verified at assignment, not per trip | 2026-07-24 | BR-002 |
 | DL-002 | Flutter → FastAPI → Supabase (never direct) | Business rules must live in one place; Supabase RLS is a second lock, not the primary gate | 2026-07-24 | Doc 4 §1, NFR §1 |
-| DL-003 | Manual refunds only — no Daraja B2C in V1 | Integration complexity not justified at this volume; owner uses personal MPESA app | 2026-07-24 | BR-010, BP-003 |
+| DL-003 | Manual refunds only — no BambaStack B2C in V1 | Integration complexity not justified at this volume; owner uses personal MPESA app | 2026-07-24 | BR-010, BP-003 |
 | DL-004 | Manual rider assignment when 2+ riders online | Owner has context no algorithm has (fuel, fatigue, route familiarity); auto-dispatch is V2 | 2026-07-24 | Doc 1, BR-008 |
 | DL-005 | Ride status and payment status are independent | A completed ride with a disputed payment is a valid state; the trip happened, the money is separate | 2026-07-24 | BR-009, BR-010 |
 | DL-006 | Events drive state via DB triggers — never direct writes | Prevents application code from creating state drift; single source of truth for audit | 2026-07-24 | BR-022, Doc 4 §3 |
@@ -35,4 +35,4 @@ Architectural and design decisions made during the specification phase. Indexed 
 | DL-027 | Maps: `flutter_map` + OpenStreetMap Engine | Uses `flutter_map` with OpenStreetMap tile provider (`tile.openstreetmap.org`); free tier with zero API keys or paid billing required | 2026-08-01 | Doc 4 §4, pubspec.yaml |
 | DL-028 | Google OAuth + Email/Password Auth Architecture | Replaced legacy phone OTP signup with Google Sign-In (server ID token validation) and Email/Password with JWT sessions; PASSENGER role only for self-service | 2026-08-01 | BR-001, BR-002, Migration 023 |
 | DL-029 | Complete Deprecation of Phone OTP Auth & Email Password Reset Standard | Completely removed phone OTP authentication and SMS login endpoints from repository, database, and ERD. Identity is strictly anchored on Email/OAuth (Google, Facebook, Apple, Email+Password). Phone number is exclusively an operational M-Pesa payment MSISDN. 6-digit Email OTP implemented for Forgot Password resets. | 2026-08-02 | BR-001, Migration 027, ERD |
-
+| DL-030 | Standardization on Supabase Auth & Google OAuth Deprecation | Deprecated `/auth/google` endpoint and `google_id` DB column. Standardized on Supabase Auth (`supabase_flutter` + GoTrue) and FastAPI JWT validation with `SUPABASE_JWT_SECRET`. Added `on_auth_user_created` PostgreSQL trigger to sync `auth.users` into `public.users`. | 2026-08-06 | Migration 030, ARB Report, ERD |

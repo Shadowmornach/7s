@@ -8,7 +8,6 @@ Bridge between specification documents and OpenAPI contract. Every endpoint maps
 
 | POST | `/api/v1/auth/register` | Any | No | BR-001 | Register with Email & Password |
 | POST | `/api/v1/auth/login` | Any | No | BR-001 | Sign in with Email & Password |
-| POST | `/api/v1/auth/google` | Any | No | BR-001 | Sign in / register via Google Sign-In |
 | POST | `/api/v1/auth/forgot-password/request` | Any | No | BR-001 | Request 6-digit OTP for email password reset |
 | POST | `/api/v1/auth/forgot-password/verify-otp` | Any | No | BR-001 | Verify 6-digit OTP for email password reset |
 | POST | `/api/v1/auth/forgot-password/reset` | Any | No | BR-001 | Reset password with verified 6-digit OTP |
@@ -42,7 +41,7 @@ Bridge between specification documents and OpenAPI contract. Every endpoint maps
 | POST | `/api/v1/rides/{id}/payment/dispute` | Rider | Yes | BR-011 | Flag payment dispute |
 | POST | `/api/v1/rides/{id}/payment/refund` | Owner | Yes | BR-010 | Record manual refund |
 | GET | `/api/v1/rides/{id}/payment/events` | Participant | Yes | BR-022 | Get payment event history |
-| POST | `/api/v1/webhooks/mpesa/callback` | System | No* | BR-010 | Daraja callback (IP-validated) |
+| POST | `/api/v1/payments/bambastack/webhook` | System | No* | BR-010 | BambaStack M-Pesa callback |
 
 *\*Authenticated by IP allowlist + payload validation, not JWT.*
 

@@ -40,7 +40,7 @@ Unlike Documents 1–5 (frozen), this document is updated as the business owner 
 
 | Key | Default | Unit | Description | Source |
 |---|---|---|---|---|
-| `mpesa_stk_timeout_seconds` | 90 | seconds | Wait for Daraja callback before querying status | BR-010 |
+| `mpesa_stk_timeout_seconds` | 90 | seconds | Wait for BambaStack callback before querying status | BR-010 |
 | `mpesa_max_retries` | 3 | count | Max STK push attempts per ride before forcing cash | BR-010 |
 
 ## Ride Operations

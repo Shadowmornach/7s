@@ -106,7 +106,7 @@ Every business rule (BR-001 through BR-041) mapped to automated test cases. This
 | BR-008 | Auto-assign single rider | Unit | 1 online verified rider → auto-assigned after owner approval | High |
 | BR-008 | Manual assign multiple | Unit | 2+ online riders → no auto-assignment, owner must select | High |
 | BR-010 | MPESA retry limit | Unit | 4th STK attempt → rejected, forced cash fallback | High |
-| BR-010 | STK timeout → query status | Unit | 90s without callback → query Daraja before treating as failure | High |
+| BR-010 | STK timeout → query status | Unit | 90s without callback → query BambaStack before treating as failure | High |
 | BR-011 | Cash path requires confirmation | Unit | Ride cannot close on cash without explicit rider confirmation | High |
 | BR-017 | Operating hours gate | Unit | Request outside configured hours → immediate rejection | High |
 | BR-018 | Radius check server-side | Unit | Pickup 25km from center (radius=20km) → rejected | High |

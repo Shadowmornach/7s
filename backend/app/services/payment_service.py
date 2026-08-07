@@ -6,8 +6,8 @@ from uuid import UUID
 from app.repositories.payment_repository import PaymentRepository
 from app.repositories.ride_repository import RideRepository
 from app.repositories.user_repository import UserRepository
-from app.services.daraja_client import DarajaClient, DarajaException
-from app.schemas.payments import STKPushRequest, STKPushResponse, DarajaCallbackPayload, PaymentEventCreate, PaymentStatusResponse, _TERMINAL_PAYMENT_STATUSES
+from app.services.bambastack_client import BambaStackClient, BambaStackException
+from app.schemas.payments import STKPushRequest, BambaStackSTKResponse, BambaStackCallbackPayload, PaymentEventCreate, PaymentStatusResponse, _TERMINAL_PAYMENT_STATUSES
 from app.domain.exceptions import RuleViolationError, UnauthorizedError, ResourceNotFoundError
 from app.domain.pubsub import PubSubInterface
 
@@ -19,18 +19,18 @@ class PaymentService:
         payment_repo: PaymentRepository,
         ride_repo: RideRepository,
         user_repo: UserRepository,
-        daraja_client: DarajaClient,
+        bambastack_client: BambaStackClient,
         pubsub_service: PubSubInterface
     ):
         self.payment_repo = payment_repo
         self.ride_repo = ride_repo
         self.user_repo = user_repo
-        self.daraja = daraja_client
+        self.bambastack = bambastack_client
         self.pubsub = pubsub_service
 
-    async def initiate_stk_push(self, passenger_id: UUID, payload: STKPushRequest) -> STKPushResponse:
+    async def initiate_stk_push(self, passenger_id: UUID, payload: STKPushRequest) -> BambaStackSTKResponse:
         """
-        Initiates an M-PESA STK Push for a ride.
+        Initiates an M-PESA STK Push for a ride via BambaStack.
         Enforces BR-010 (payment account gating), BR-035 (no attempt after success), and Document 4 Concurrency Control & Idempotency section (idempotency by ride_id).
         """
         ride = await self.ride_repo.get_ride(payload.ride_id)
@@ -53,12 +53,13 @@ class PaymentService:
                 raise RuleViolationError("No registered phone number found for passenger.")
             phone_number = passenger["phone_number"]
 
-        # Ensure Kenyan format (2547...)
+        # Ensure Kenyan format (2547... or 07... — BambaStack accepts both)
         formatted_phone = phone_number.replace("+", "").strip()
-        if formatted_phone.startswith("0"):
-            formatted_phone = "254" + formatted_phone[1:]
-        if not formatted_phone.startswith("254"):
-            raise RuleViolationError("Phone number must be a valid Kenyan mobile number (254...).")
+        if formatted_phone.startswith("254"):
+            # Convert to local 07xx format for BambaStack
+            formatted_phone = "0" + formatted_phone[3:]
+        if not (formatted_phone.startswith("07") or formatted_phone.startswith("01")):
+            raise RuleViolationError("Phone number must be a valid Kenyan mobile number.")
 
         # Fetch fare amount (read from ride table, never trusted from client)
         conn_pool = await self.ride_repo._get_pool()
@@ -69,17 +70,28 @@ class PaymentService:
         if not fare_amount or fare_amount <= 0:
             raise RuleViolationError("Ride fare amount has not been set or is invalid.")
 
+        # Use ride_id as the unique BambaStack payment reference
+        reference = str(payload.ride_id)
+
         try:
-            # Trigger STK Push via Daraja API infrastructure client
-            stk_response = await self.daraja.send_stk_push(
-                amount=fare_amount,
-                phone_number=formatted_phone,
-                reference=str(payload.ride_id),
-                description=f"Payment for 7s Ride {str(payload.ride_id)[:8]}"
+            # Trigger STK Push via BambaStack gateway
+            bambastack_response = await self.bambastack.send_stk_push(
+                phone=formatted_phone,
+                amount=int(fare_amount),
+                reference=reference,
+                description=f"Payment for 7s Ride {reference[:8]}"
             )
-        except DarajaException as e:
-            logger.error(f"Daraja STK push failed for ride {payload.ride_id}: {e}")
+        except BambaStackException as e:
+            logger.error(f"BambaStack STK push failed for ride {payload.ride_id}: {e}")
             raise RuleViolationError(f"M-PESA payment request failed: {str(e)}")
+
+        transaction_id = bambastack_response.get("transaction_id", "")
+        checkout_request_id = bambastack_response.get("checkout_request_id", "")
+
+        stk_response = BambaStackSTKResponse(
+            transaction_id=transaction_id,
+            checkout_request_id=checkout_request_id,
+        )
 
         # Log PAYMENT_ATTEMPT event in immutable log
         # Trigger updates rides.payment_status to PENDING automatically via DB trigger (BR-022)
@@ -89,11 +101,10 @@ class PaymentService:
             phone_number_used=formatted_phone,
             amount=fare_amount,
             metadata={
-                "MerchantRequestID": stk_response.MerchantRequestID,
-                "CheckoutRequestID": stk_response.CheckoutRequestID,
-                "ResponseCode": stk_response.ResponseCode,
-                "ResponseDescription": stk_response.ResponseDescription,
-                "CustomerMessage": stk_response.CustomerMessage
+                "transaction_id": transaction_id,
+                "CheckoutRequestID": checkout_request_id,
+                "provider": "BAMBASTACK",
+                "reference": reference,
             }
         )
 
@@ -107,39 +118,33 @@ class PaymentService:
 
         return stk_response
 
-    async def handle_daraja_callback(self, payload: DarajaCallbackPayload) -> Dict[str, Any]:
+    async def handle_bambastack_callback(self, payload: BambaStackCallbackPayload) -> Dict[str, Any]:
         """
-        Asynchronous webhook callback handler from Safaricom Daraja.
+        Webhook callback handler for BambaStack payment resolution.
         Strictly logs PAYMENT_SUCCESS or PAYMENT_FAILED event.
         Database trigger updates rides.payment_status (BR-022, BR-010, BR-035).
-        """
-        stk_cb = payload.Body.stkCallback
-        checkout_request_id = stk_cb.CheckoutRequestID
-        result_code = stk_cb.ResultCode
-        result_desc = stk_cb.ResultDesc
 
+        Idempotency: If the ride already has payment_status=SUCCESS, the DB trigger
+        rejects duplicate SUCCESS events (BR-010), and we return 'ignored'.
+        """
+        checkout_request_id = payload.checkout_request_id
+        result_code = payload.ResultCode
+        result_desc = payload.ResultDesc
+
+        # Correlate callback to an existing 7s payment attempt
         attempt_event = await self.payment_repo.get_payment_by_checkout_request_id(checkout_request_id)
         if not attempt_event:
-            logger.warning(f"Received Daraja callback for unknown CheckoutRequestID: {checkout_request_id}")
-            raise ResourceNotFoundError(f"Payment attempt for CheckoutRequestID {checkout_request_id} not found")
+            logger.warning(f"Received BambaStack callback for unknown checkout_request_id: {checkout_request_id}")
+            raise ResourceNotFoundError(f"Payment attempt for checkout_request_id {checkout_request_id} not found")
 
         ride_id = UUID(str(attempt_event["ride_id"]))
         raw_callback_dict = payload.model_dump(mode='json')
 
         if result_code == 0:
             # Payment Successful
-            mpesa_receipt = None
+            mpesa_receipt = payload.MpesaReceiptNumber
             amount = attempt_event.get("amount")
             phone_used = attempt_event.get("phone_number_used")
-
-            if stk_cb.CallbackMetadata and stk_cb.CallbackMetadata.Item:
-                for item in stk_cb.CallbackMetadata.Item:
-                    if item.Name == "MpesaReceiptNumber" and item.Value:
-                        mpesa_receipt = str(item.Value)
-                    elif item.Name == "Amount" and item.Value:
-                        amount = float(item.Value)
-                    elif item.Name == "PhoneNumber" and item.Value:
-                        phone_used = str(item.Value)
 
             event_dto = PaymentEventCreate(
                 ride_id=ride_id,
@@ -148,7 +153,7 @@ class PaymentService:
                 phone_number_used=phone_used,
                 amount=amount,
                 raw_callback=raw_callback_dict,
-                metadata={"payment_method": "MPESA", "CheckoutRequestID": checkout_request_id, "ResultDesc": result_desc}
+                metadata={"payment_method": "MPESA", "CheckoutRequestID": checkout_request_id, "ResultDesc": result_desc, "provider": "BAMBASTACK"}
             )
         else:
             # Payment Failed or Cancelled
@@ -158,7 +163,7 @@ class PaymentService:
                 phone_number_used=attempt_event.get("phone_number_used"),
                 amount=attempt_event.get("amount"),
                 raw_callback=raw_callback_dict,
-                metadata={"CheckoutRequestID": checkout_request_id, "ResultCode": result_code, "ResultDesc": result_desc}
+                metadata={"CheckoutRequestID": checkout_request_id, "ResultCode": result_code, "ResultDesc": result_desc, "provider": "BAMBASTACK"}
             )
 
         try:
@@ -237,7 +242,7 @@ class PaymentService:
 
     async def record_manual_refund(self, owner_id: UUID, owner_role: str, ride_id: UUID, reason: str) -> Dict[str, Any]:
         """
-        Records a manual owner refund (REFUND_RECORDED event). No automated Daraja B2C logic.
+        Records a manual owner refund (REFUND_RECORDED event). No automated reversal logic.
         Requires rides.payment_status='SUCCESS' per DB CHECK constraint chk_refund_requires_success.
         """
         owner_role_upper = owner_role.upper() if owner_role else ""
@@ -266,42 +271,49 @@ class PaymentService:
 
     async def reconcile_pending_payments(self, timeout_seconds: int = 90) -> Dict[str, Any]:
         """
-        Reconciles pending STK push payments by querying Daraja STK status for attempts past timeout window (BR-010).
-        Inserts PAYMENT_SUCCESS or PAYMENT_FAILED event based on Daraja status.
+        Reconciles pending STK push payments by polling BambaStack payment status
+        for attempts past the timeout window (BR-010).
+        Maps BambaStack statuses (paid/failed/cancelled) to 7s payment events.
         """
         pending_attempts = await self.payment_repo.get_pending_stk_payments(timeout_seconds=timeout_seconds)
         results = []
 
         for attempt in pending_attempts:
             ride_id = UUID(str(attempt["ride_id"]))
-            checkout_request_id = attempt.get("checkout_request_id")
-
-            if not checkout_request_id:
-                continue
+            # Use ride_id as the BambaStack reference (same as used in send_stk_push)
+            reference = str(ride_id)
 
             try:
-                daraja_res = await self.daraja.query_stk_status(checkout_request_id)
-                result_code = str(daraja_res.get("ResultCode", "-1"))
-                result_desc = str(daraja_res.get("ResultDesc", "Reconciliation query result"))
+                bambastack_status = await self.bambastack.get_payment_status(reference)
+                provider_status = str(bambastack_status.get("status", "")).lower()
 
-                if result_code == "0":
+                if provider_status == "paid":
                     event_dto = PaymentEventCreate(
                         ride_id=ride_id,
                         payment_event_type="PAYMENT_SUCCESS",
                         phone_number_used=attempt.get("phone_number_used"),
                         amount=float(attempt["amount"]) if attempt.get("amount") else None,
-                        raw_callback=daraja_res,
-                        metadata={"payment_method": "MPESA", "CheckoutRequestID": checkout_request_id, "reconciled": True}
+                        raw_callback=bambastack_status,
+                        metadata={"payment_method": "MPESA", "provider": "BAMBASTACK", "reconciled": True, "reference": reference}
                     )
-                else:
+                elif provider_status in ("failed", "cancelled"):
                     event_dto = PaymentEventCreate(
                         ride_id=ride_id,
                         payment_event_type="PAYMENT_FAILED",
                         phone_number_used=attempt.get("phone_number_used"),
                         amount=float(attempt["amount"]) if attempt.get("amount") else None,
-                        raw_callback=daraja_res,
-                        metadata={"CheckoutRequestID": checkout_request_id, "ResultCode": result_code, "ResultDesc": result_desc, "reconciled": True}
+                        raw_callback=bambastack_status,
+                        metadata={"provider": "BAMBASTACK", "provider_status": provider_status, "reconciled": True, "reference": reference}
                     )
+                elif provider_status == "pending":
+                    # Still pending at provider — skip, will be picked up next sweep
+                    results.append({"ride_id": str(ride_id), "status": "still_pending"})
+                    continue
+                else:
+                    # Unknown provider status — log and skip safely
+                    logger.warning(f"Unknown BambaStack payment status '{provider_status}' for ride {ride_id}")
+                    results.append({"ride_id": str(ride_id), "status": "unknown_provider_status", "provider_status": provider_status})
+                    continue
 
                 inserted = await self.payment_repo.insert_payment_event(event_dto)
                 updated_ride = await self.ride_repo.get_ride(ride_id)
@@ -341,4 +353,3 @@ class PaymentService:
             updated_at=updated_at_str,
             is_terminal=ride.payment_status in _TERMINAL_PAYMENT_STATUSES,
         )
-

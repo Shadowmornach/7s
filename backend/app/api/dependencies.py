@@ -21,7 +21,7 @@ from app.services.place_service import PlaceService
 from app.services.fare_service import FareService
 from app.services.maps_service import MapsService
 from app.services.payment_service import PaymentService
-from app.services.daraja_client import daraja_client
+from app.services.bambastack_client import bambastack_client
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
@@ -67,7 +67,7 @@ def get_payment_service() -> PaymentService:
         payment_repo=payment_repository,
         ride_repo=RideRepository(),
         user_repo=UserRepository(),
-        daraja_client=daraja_client,
+        bambastack_client=bambastack_client,
         pubsub_service=_pubsub_instance
     )
 
@@ -101,75 +101,3 @@ def require_role(allowed_roles: list[str]):
             )
         return current_user
     return role_checker
-
-import ipaddress
-from fastapi import Request
-from app.core.config import settings
-
-def verify_daraja_ip_origin(request: Request) -> None:
-    """
-    Verifies that an incoming Daraja webhook callback originates from an allowed Safaricom IP subnet (Document 5 NFR)
-    AND contains the valid shared secret token query parameter if configured.
-    """
-    if settings.DARAJA_WEBHOOK_SECRET:
-        secret_token = settings.DARAJA_WEBHOOK_SECRET.get_secret_value()
-        query_token = request.query_params.get("token")
-        if not query_token or query_token != secret_token:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Forbidden: Invalid or missing webhook query secret token"
-            )
-
-    if not settings.ENABLE_DARAJA_IP_VALIDATION:
-        return
-
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        client_ip_str = forwarded_for.split(",")[0].strip()
-    elif request.client:
-        client_ip_str = request.client.host
-    else:
-        client_ip_str = ""
-
-    if not client_ip_str:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden: Unable to determine client IP address"
-        )
-
-    if client_ip_str == "testclient":
-        return
-
-    try:
-        client_ip = ipaddress.ip_address(client_ip_str)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Forbidden: Invalid client IP format '{client_ip_str}'"
-        )
-
-    allowed_networks = [net.strip() for net in settings.DARAJA_ALLOWED_IPS.split(",") if net.strip()]
-    
-    is_allowed = False
-    for net_str in allowed_networks:
-        if net_str == "testclient":
-            continue
-        try:
-            if "/" in net_str:
-                network = ipaddress.ip_network(net_str, strict=False)
-                if client_ip in network:
-                    is_allowed = True
-                    break
-            else:
-                allowed_ip = ipaddress.ip_address(net_str)
-                if client_ip == allowed_ip:
-                    is_allowed = True
-                    break
-        except ValueError:
-            continue
-
-    if not is_allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Forbidden: Callback request origin IP '{client_ip_str}' is not in allowed Safaricom IP ranges (Document 5 NFR)."
-        )

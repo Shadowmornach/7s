@@ -5,7 +5,6 @@ class ApiEndpoints {
   // Auth (Argon2id + JWT)
   static const String authRegister = '/auth/register';
   static const String authLogin = '/auth/login';
-  static const String authGoogle = '/auth/google';
   static const String authProfileComplete = '/auth/profile/complete';
   static const String refreshToken = '/auth/refresh';
 
@@ -24,7 +23,7 @@ class ApiEndpoints {
   // Telemetry (assigned rider posts location updates during active ride)
   static const String telemetryLocation = '/rides'; // used as POST /rides/{id}/location dynamically
 
-  // Payments (Daraja M-Pesa)
+  // Payments (M-Pesa via BambaStack)
   static const String paymentsStk = '/api/v1/payments/stk-push';
   static const String paymentsCashConfirm = '/api/v1/payments/cash-confirm';
   static const String paymentsDispute = '/api/v1/payments/dispute';

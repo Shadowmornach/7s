@@ -11,7 +11,7 @@ This document defines *how* the business behavior in Documents 1–3 is implemen
 - **Backend:** Python / FastAPI
 - **Database:** PostgreSQL via Supabase (also provides Auth, Realtime for authenticated contexts, Storage)
 - **Maps/Routing:** OpenStreetMap + OpenRouteService during development; evaluate Google Maps/Places/Routes before public launch based on real accuracy testing in Voi
-- **Payments:** Safaricom Daraja API (STK Push only — no B2C/refund automation in V1)
+- **Payments:** BambaStack API (M-Pesa STK Push gateway)
 - **Push notifications:** Firebase Cloud Messaging
 - **SMS:** deferred past V1 (see Document 1) — Africa's Talking is the planned provider if/when added
 
@@ -113,7 +113,7 @@ backend/
     services/         # booking engine, fare engine, payment engine, strike engine — business logic lives here
     models/            # Pydantic schemas (request/response) + DB models
     db/                # Supabase client, migrations
-    integrations/       # Daraja, OSM/Google, FCM — external API wrappers
+    integrations/       # BambaStack, OSM/Google, FCM — external API wrappers
     core/                # config, auth/JWT validation, rate limiting
   tests/
 ```
@@ -165,7 +165,7 @@ Device/token lifecycle (registration, refresh, expiry) lives here, not in Docume
 2. **Maps** — current location, Places, service radius, routing
 3. **Authentication** — real login for all three roles
 4. **Live Updates** — Supabase Realtime for authenticated ride tracking
-5. **Payments** — Daraja integration, cash confirmation
+5. **Payments** — BambaStack integration, cash confirmation
 6. **Reports & Operations** — revenue, history, rider/passenger/place management
 
 ---
@@ -173,7 +173,7 @@ Device/token lifecycle (registration, refresh, expiry) lives here, not in Docume
 ## 8. Testing Strategy
 
 - Business Rules (Document 2) are directly testable — each BR-xxx should map to at least one automated test case (this is what "implementation-ready" specifications are for).
-- Priority order matches build order: ride state machine transition tests first (BR-009, BR-029, BR-041 concurrency), payment invariant tests second (BR-010 CHECK constraint, BR-035 sequencing), then integration tests for Daraja/routing/notifications last, since those depend on external services and are naturally slower/flakier.
+- Priority order matches build order: ride state machine transition tests first (BR-009, BR-029, BR-041 concurrency), payment invariant tests second (BR-010 CHECK constraint, BR-035 sequencing), then integration tests for BambaStack/routing/notifications last, since those depend on external services and are naturally slower/flakier.
 - Concurrency tests (BR-041 scenarios: double assignment, cancel-vs-start race) deserve explicit test cases, not just unit coverage, since races are exactly the kind of bug that passes casual manual testing.
 
 ---

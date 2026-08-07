@@ -2,7 +2,6 @@ from uuid import UUID
 import logging
 import time
 import secrets
-import httpx
 from app.core.config import settings
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import Token, UserResponse
@@ -17,61 +16,6 @@ _PASSWORD_RESET_STORE = {}
 class AuthService:
     def __init__(self, user_repo: UserRepository):
         self.user_repo = user_repo
-
-    async def login_with_google(self, id_token: str) -> Token:
-        logger.info("Telemetry: [google_auth_started] Verifying Google ID token...")
-        
-        # Verify Google ID token via Google OAuth2 TokenInfo endpoint or dev token fallback
-        email: str | None = None
-        google_id: str | None = None
-        full_name: str | None = None
-        photo_url: str | None = None
-
-        try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                resp = await client.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}")
-                if resp.status_code == 200:
-                    data = resp.json()
-                    email = data.get("email")
-                    google_id = data.get("sub")
-                    full_name = data.get("name")
-                    photo_url = data.get("picture")
-                else:
-                    logger.warning(f"Google token validation returned status {resp.status_code}")
-        except Exception as e:
-            logger.error(f"Google token verification network exception: {e}")
-
-        if not email or not google_id:
-            raise RuleViolationError("Invalid or expired Google ID token.")
-
-        # 1. Lookup user by google_id
-        existing_google_user = await self.user_repo.get_user_by_google_id(google_id)
-        if existing_google_user:
-            logger.info(f"Telemetry: [google_auth_success] Logged in existing Google user: {existing_google_user['id']}")
-            access = create_access_token(subject=existing_google_user["id"], role=existing_google_user["role"])
-            refresh = create_refresh_token(subject=existing_google_user["id"], role=existing_google_user["role"])
-            return Token(access_token=access, refresh_token=refresh)
-
-        # 2. Lookup user by email (Automatic Account Linking)
-        existing_email_user = await self.user_repo.get_user_by_email(email)
-        if existing_email_user:
-            logger.info(f"Telemetry: [google_auth_linked] Linked Google ID {google_id} to existing email account: {existing_email_user['id']}")
-            await self.user_repo.link_google_account(existing_email_user["id"], google_id)
-            access = create_access_token(subject=existing_email_user["id"], role=existing_email_user["role"])
-            refresh = create_refresh_token(subject=existing_email_user["id"], role=existing_email_user["role"])
-            return Token(access_token=access, refresh_token=refresh)
-
-        # 3. Create new Google user (Default PASSENGER role)
-        logger.info(f"Telemetry: [google_auth_created] Registering new Google user: {email}")
-        new_user = await self.user_repo.create_google_user(
-            email=email,
-            google_id=google_id,
-            full_name=full_name,
-            photo_url=photo_url
-        )
-        access = create_access_token(subject=new_user["id"], role=new_user["role"])
-        refresh = create_refresh_token(subject=new_user["id"], role=new_user["role"])
-        return Token(access_token=access, refresh_token=refresh)
 
     async def register_with_email(self, email: str, password: str) -> Token:
         existing = await self.user_repo.get_user_by_email(email)

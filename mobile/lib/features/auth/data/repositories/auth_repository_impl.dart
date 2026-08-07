@@ -96,32 +96,6 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<UserSession> signInWithGoogle({
-    required String idToken,
-    String? email,
-    String? displayName,
-    String? photoUrl,
-  }) async {
-    _logger.info('Auth: [google_signin_started]');
-
-    // No try/catch fallback. No hardcoded timeout. Let ApiClient handle timeouts.
-    final response = await _apiClient.post(
-      ApiEndpoints.authGoogle,
-      body: {
-        'id_token': idToken,
-      },
-      requiresAuth: false,
-    );
-
-    // Backend validates the Google ID token and returns JWT + user info.
-    // Use the email from backend response (authoritative), not from client.
-    final backendEmail = (response as Map<String, dynamic>)['email']?.toString() ?? email ?? '';
-    final session = await _processAuthResponse(response, backendEmail);
-    _logger.info('Auth: [google_signin_success] UID: ${session.uid}');
-    return session;
-  }
-
-  @override
   Future<UserSession> completeProfile({
     required String nickname,
     String? fullName,

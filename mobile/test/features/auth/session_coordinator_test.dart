@@ -79,26 +79,6 @@ class MockAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<UserSession> signInWithGoogle({
-    required String idToken,
-    String? email,
-    String? displayName,
-    String? photoUrl,
-  }) async {
-    return UserSession(
-      uid: 'usr-g-1',
-      email: email ?? 'google@example.com',
-      nickname: displayName ?? 'Google',
-      role: UserRole.customer,
-      isProfileComplete: false,
-      createdAt: DateTime.now().toUtc(),
-      updatedAt: DateTime.now().toUtc(),
-      lastLogin: DateTime.now().toUtc(),
-      expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 15)),
-    );
-  }
-
-  @override
   Future<UserSession> completeProfile({required String nickname, String? fullName, String? photoUrl}) async {
     return UserSession(
       uid: 'usr-1',

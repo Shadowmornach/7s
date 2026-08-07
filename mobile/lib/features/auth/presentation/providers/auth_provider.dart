@@ -35,24 +35,6 @@ class AuthNotifier extends ChangeNotifier {
     }
   }
 
-  Future<void> signInWithGoogle({
-    required String idToken,
-    String? email,
-    String? displayName,
-    String? photoUrl,
-  }) async {
-    try {
-      await _sessionCoordinator.signInWithGoogle(
-        idToken: idToken,
-        email: email,
-        displayName: displayName,
-        photoUrl: photoUrl,
-      );
-    } finally {
-      notifyListeners();
-    }
-  }
-
   Future<void> completeProfile({
     required String nickname,
     String? fullName,

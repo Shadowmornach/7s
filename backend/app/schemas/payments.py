@@ -1,9 +1,9 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Dict
+from typing import Optional, Any, Dict
 from uuid import UUID
 
 # =====================================================================
-# DARAJA STK PUSH REQUEST & RESPONSE
+# STK PUSH REQUEST (Provider-Neutral — initiated by passenger)
 # =====================================================================
 
 class STKPushRequest(BaseModel):
@@ -14,42 +14,33 @@ class STKPushRequest(BaseModel):
     # We do not accept amount here; amount is strictly read from the ride's fare_amount (Security)
     phone_number: Optional[str] = Field(default=None, description="Optional override number. If null, uses passenger registered phone.")
 
-class STKPushResponse(BaseModel):
-    """
-    Synchronous response from Daraja when an STK push is successfully queued.
-    """
-    MerchantRequestID: str
-    CheckoutRequestID: str
-    ResponseCode: str
-    ResponseDescription: str
-    CustomerMessage: str
-
 # =====================================================================
-# DARAJA ASYNCHRONOUS CALLBACK PAYLOAD
+# BAMBASTACK STK PUSH RESPONSE
 # =====================================================================
 
-class CallbackMetadataItem(BaseModel):
-    Name: str
-    Value: Optional[Any] = None
+class BambaStackSTKResponse(BaseModel):
+    """
+    Synchronous response from BambaStack when an STK push is successfully queued (HTTP 202).
+    Fields match the actual BambaStack API contract.
+    """
+    transaction_id: str
+    checkout_request_id: Optional[str] = None
 
-class STKCallbackMetadata(BaseModel):
-    Item: List[CallbackMetadataItem]
+# =====================================================================
+# BAMBASTACK WEBHOOK CALLBACK PAYLOAD
+# =====================================================================
 
-class STKCallback(BaseModel):
-    MerchantRequestID: str
-    CheckoutRequestID: str
+class BambaStackCallbackPayload(BaseModel):
+    """
+    The JSON payload received at the 7s webhook endpoint from BambaStack
+    when a payment is resolved (success or failure).
+
+    Contract source: BambaStack_7s_delivery_Collection.json
+    """
+    checkout_request_id: str
     ResultCode: int
     ResultDesc: str
-    CallbackMetadata: Optional[STKCallbackMetadata] = None
-
-class DarajaCallbackBody(BaseModel):
-    stkCallback: STKCallback
-
-class DarajaCallbackPayload(BaseModel):
-    """
-    The full JSON payload received at the webhook endpoint from Safaricom.
-    """
-    Body: DarajaCallbackBody
+    MpesaReceiptNumber: Optional[str] = None
 
 # =====================================================================
 # INTERNAL PAYMENT EVENT DTO
@@ -84,4 +75,3 @@ class PaymentStatusResponse(BaseModel):
     payment_method: Optional[str] = None  # e.g. "MPESA", "CASH" — sourced from latest event metadata
     updated_at: Optional[str] = None      # ISO-8601 UTC timestamp of last rides.updated_at
     is_terminal: bool                     # True when no further state transitions are possible
-

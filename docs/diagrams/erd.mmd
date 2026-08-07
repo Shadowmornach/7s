@@ -9,7 +9,6 @@ erDiagram
         varchar email UK "NOT NULL, UNIQUE — primary auth identity"
         varchar phone_number "NULLABLE — M-Pesa payment MSISDN only"
         varchar password_hash "NULLABLE — for Email+Password auth"
-        varchar google_id "NULLABLE — for Google Sign-In"
         varchar apple_id "NULLABLE — for Apple Sign-In (iOS)"
         varchar facebook_id "NULLABLE — for Facebook Login"
         role role "NOT NULL — OWNER, RIDER, PASSENGER"

@@ -9,12 +9,12 @@ sequenceDiagram
     participant API as FastAPI
     participant DB as PostgreSQL
     participant R as Rider (Flutter)
-    participant D as Daraja API
+    participant D as BambaStack API
     participant FCM as Firebase Cloud Messaging
 
     Note over P,D: === MPESA STK Push Path ===
 
-    P->>API: POST /api/v1/rides/{id}/payment/stk-push
+    P->>API: POST /api/v1/payments/stk-push
     API->>DB: Check payment_status != SUCCESS (BR-035)
     API->>DB: Check MPESA retry count < 3 (BR-010)
     API->>DB: Get passenger phone_number
@@ -22,16 +22,16 @@ sequenceDiagram
     API->>DB: INSERT payment_event (PAYMENT_ATTEMPT)
     Note over DB: Trigger: sets payment_status = PENDING
 
-    API->>D: STK Push Request<br/>{phone, amount, ride_id as idempotency key}
-    D-->>API: 200 {CheckoutRequestID}
-    API-->>P: 200 {status: PENDING, message: "Check your phone"}
+    API->>D: STK Push Request<br/>{phone, amount, ride_id as reference}
+    D-->>API: 202 {transaction_id, checkout_request_id}
+    API-->>P: 202 {status: PENDING, message: "Check your phone"}
 
     Note over P: Passenger enters M-PESA PIN on phone
 
     rect rgb(240, 255, 240)
-        Note over D,API: Daraja Callback (async)
-        D->>API: POST /api/v1/webhooks/mpesa/callback<br/>{ResultCode: 0, MpesaReceiptNumber: ...}
-        Note over API: Validate: IP allowlist + payload shape (NFR §1)
+        Note over D,API: BambaStack Webhook Callback (async)
+        D->>API: POST /api/v1/payments/bambastack/webhook<br/>{ResultCode: 0, MpesaReceiptNumber: ...}
+        Note over API: Validate payload shape + correlate checkout_request_id
         API->>DB: INSERT payment_event (PAYMENT_SUCCESS,<br/>mpesa_receipt, raw_callback, amount)
         Note over DB: Trigger: sets payment_status = SUCCESS<br/>locks actual_payment_method = MPESA
     end
@@ -42,21 +42,21 @@ sequenceDiagram
     Note over P,D: === MPESA Failure + Retry Path ===
 
     rect rgb(255, 240, 240)
-        D->>API: POST /api/v1/webhooks/mpesa/callback<br/>{ResultCode: 1032, Description: "Cancelled by user"}
+        D->>API: POST /api/v1/payments/bambastack/webhook<br/>{ResultCode: 1032, Description: "Cancelled by user"}
         API->>DB: INSERT payment_event (PAYMENT_FAILED,<br/>raw_callback)
         Note over DB: Trigger: sets payment_status = FAILED
 
-        P->>API: POST /api/v1/rides/{id}/payment/stk-push
+        P->>API: POST /api/v1/payments/stk-push
         Note over API: Retry attempt 2 of 3
-        API->>D: STK Push Request (same ride_id)
+        API->>D: STK Push Request (same ride_id reference)
     end
 
     Note over P,D: === MPESA Timeout Path ===
 
     rect rgb(255, 248, 230)
         Note over API: 90s elapsed, no callback received
-        API->>D: Query STK Status (CheckoutRequestID)
-        D-->>API: {ResultCode: 1037, Description: "Timeout"}
+        API->>D: GET /api/external/v1/payments/{reference}
+        D-->>API: {status: "failed"}
         API->>DB: INSERT payment_event (PAYMENT_FAILED,<br/>metadata={reason: "STK_TIMEOUT"})
         Note over DB: Trigger: sets payment_status = FAILED
 

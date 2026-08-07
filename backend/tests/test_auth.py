@@ -46,11 +46,6 @@ def test_email_login_success():
     assert login_resp.status_code == 200
     assert "access_token" in login_resp.json()
 
-def test_google_login_flow():
-    token_resp = client.post("/auth/google", json={"id_token": "dev-google-token-12345"})
-    assert token_resp.status_code == 200
-    assert "access_token" in token_resp.json()
-
 def test_refresh_token_endpoint():
     from app.core.jwt_auth import create_refresh_token
     token = create_refresh_token(subject="test-user-id", role="PASSENGER")

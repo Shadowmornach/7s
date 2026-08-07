@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from uuid import UUID
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from pydantic import BaseModel, Field
 
-from app.schemas.payments import STKPushRequest, STKPushResponse, DarajaCallbackPayload, PaymentStatusResponse
+from app.schemas.payments import STKPushRequest, BambaStackSTKResponse, BambaStackCallbackPayload, PaymentStatusResponse
 from app.schemas.auth import TokenPayload
-from app.api.dependencies import get_current_user, require_role, get_payment_service, verify_daraja_ip_origin
+from app.api.dependencies import get_current_user, require_role, get_payment_service
 from app.services.payment_service import PaymentService
 from app.domain.exceptions import DomainException, RuleViolationError, UnauthorizedError, ResourceNotFoundError
 
@@ -25,7 +25,7 @@ def _get_authenticated_user(current_user: TokenPayload) -> tuple[UUID, str]:
         )
     return UUID(current_user.sub), current_user.role
 
-@router.post("/stk-push", response_model=STKPushResponse)
+@router.post("/stk-push", response_model=BambaStackSTKResponse)
 async def initiate_stk_push(
     payload: STKPushRequest,
     current_user: TokenPayload = Depends(get_current_user),
@@ -45,19 +45,27 @@ async def initiate_stk_push(
             status_code = status.HTTP_400_BAD_REQUEST
         raise HTTPException(status_code=status_code, detail={"error_code": e.code, "message": str(e)})
 
-@router.post("/callback")
-async def daraja_callback(
-    request: Request,
-    payload: DarajaCallbackPayload,
+@router.post("/bambastack/webhook")
+async def bambastack_webhook(
+    payload: BambaStackCallbackPayload,
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     """
-    Public webhook endpoint called asynchronously by Safaricom Daraja upon STK push resolution.
-    Verified against Safaricom IP allowlist per Document 5 NFR.
+    Production webhook endpoint for BambaStack payment callbacks.
+    Called asynchronously by BambaStack when an M-Pesa STK Push is resolved.
+
+    Public URL: https://<7S-BACKEND-DOMAIN>/api/v1/payments/bambastack/webhook
+
+    Security: Strict payload validation, payment correlation, and idempotency.
+    BambaStack does not currently document a webhook signature/HMAC mechanism.
+    If BambaStack later provides an official authentication mechanism,
+    add verification here before processing the callback.
+
+    Idempotency: Duplicate callbacks for the same checkout_request_id are safely
+    rejected by the database trigger (BR-010).
     """
-    verify_daraja_ip_origin(request)
     try:
-        return await payment_service.handle_daraja_callback(payload)
+        return await payment_service.handle_bambastack_callback(payload)
     except ResourceNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail={"error_code": "NOT_FOUND", "message": str(e)})
     except DomainException as e:
@@ -109,7 +117,7 @@ async def record_manual_refund(
     payment_service: PaymentService = Depends(get_payment_service)
 ):
     """
-    Records a manual owner refund (REFUND_RECORDED). No automated Daraja reversal.
+    Records a manual owner refund (REFUND_RECORDED). No automated reversal.
     Requires payment_status = SUCCESS (BR-010 / DB CHECK constraint).
     """
     owner_id, role = _get_authenticated_user(current_user)
@@ -132,7 +140,7 @@ async def reconcile_pending_payments(
 ):
     """
     Triggers automated reconciliation of pending STK payments past timeout window (BR-010).
-    Queries Daraja STK status API and updates payment status.
+    Polls BambaStack payment status API and updates payment status.
     """
     _get_authenticated_user(current_user)
     try:
@@ -158,4 +166,3 @@ async def get_payment_status(
     except DomainException as e:
         status_code = status.HTTP_403_FORBIDDEN if e.code == "UNAUTHORIZED" else status.HTTP_404_NOT_FOUND
         raise HTTPException(status_code=status_code, detail={"error_code": e.code, "message": str(e)})
-

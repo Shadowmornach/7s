@@ -46,7 +46,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     ),
     OnboardingPageItem(
       title: 'Cash & Secure M-Pesa',
-      description: 'Pay seamlessly with Cash or instant M-Pesa Daraja STK push notifications.',
+      description: 'Pay seamlessly with Cash or instant M-Pesa STK push notifications.',
       icon: Icons.account_balance_wallet_rounded,
       accentColor: AppColors.primary,
     ),

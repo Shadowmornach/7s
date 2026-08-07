@@ -12,7 +12,7 @@ class HelpCenterScreen extends StatelessWidget {
     {'q': 'How does live tracking work?', 'a': 'Once a driver accepts, you will see their vehicle location and estimated arrival time update live on the map.'},
     {'q': 'What should I do in an emergency?', 'a': 'Tap the red EMERGENCY SOS button. It instantly notifies 7s safety response teams and shares your live location with your emergency contacts.'},
     {'q': 'How do I share my trip with family?', 'a': 'Tap "Share Ride" during an active trip to generate a secure public tracking link that anyone can view in a web browser.'},
-    {'q': 'Which payment methods are accepted?', 'a': '7s supports Cash and instant M-Pesa Daraja STK push payments directly from your phone.'},
+    {'q': 'Which payment methods are accepted?', 'a': '7s supports Cash and instant M-Pesa STK push payments directly from your phone.'},
     {'q': 'How do I become a Rider or Fleet Owner?', 'a': 'Register on 7s, submit your valid driving license/vehicle documents, and complete verification in the Operations Center.'},
     {'q': 'Where can I see my trip history?', 'a': 'Navigate to Menu -> Ride History to view past receipts, route maps, and driver ratings.'},
     {'q': 'How do I contact 7s Support?', 'a': 'Reach our 24/7 Support team via email at support@7s.co.ke or call our helpline directly from the app.'},

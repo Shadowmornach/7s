@@ -26,30 +26,6 @@ class UserRepository:
     async def _get_pool(self) -> Pool | None:
         return self._pool or db.pool
 
-    async def get_user_by_google_id(self, google_id: str) -> Optional[dict]:
-        pool = await self._get_pool()
-        if not pool:
-            for u in _USERS_MEM_DB.values():
-                if u.get("google_id") == google_id:
-                    return u
-            return None
-        try:
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT id, email, google_id, phone_number, role, nickname, full_name, photo_url, service_zone, is_profile_complete, is_active FROM users WHERE google_id = $1",
-                    google_id
-                )
-                if row:
-                    user = dict(row)
-                    user["status"] = "ACTIVE" if user.get("is_active") else "INACTIVE"
-                    return user
-                return None
-        except Exception:
-            for u in _USERS_MEM_DB.values():
-                if u.get("google_id") == google_id:
-                    return u
-            return None
-
     async def get_user_by_email(self, email: str) -> Optional[dict]:
         pool = await self._get_pool()
         if not pool:
@@ -60,7 +36,7 @@ class UserRepository:
         try:
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT id, email, google_id, phone_number, role, nickname, full_name, photo_url, service_zone, is_profile_complete, is_active FROM users WHERE email = $1",
+                    "SELECT id, email, phone_number, role, nickname, full_name, photo_url, service_zone, is_profile_complete, is_active FROM users WHERE email = $1",
                     email
                 )
                 if row:
@@ -84,7 +60,7 @@ class UserRepository:
         try:
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT id, email, google_id, phone_number, role, nickname, full_name, photo_url, service_zone, is_profile_complete FROM users WHERE id = $1",
+                    "SELECT id, email, phone_number, role, nickname, full_name, photo_url, service_zone, is_profile_complete FROM users WHERE id = $1",
                     user_id
                 )
                 if row:
@@ -128,57 +104,6 @@ class UserRepository:
             logging.getLogger("7s.user_repo").error(f"create_email_user DB insert failed for {email}: {e}")
             return user_data
 
-    async def link_google_account(self, user_id: UUID, google_id: str) -> None:
-        for u in _USERS_MEM_DB.values():
-            if u["id"] == user_id:
-                u["google_id"] = google_id
-                u["email_verified"] = True
-
-        pool = await self._get_pool()
-        if not pool:
-            return
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE users SET google_id = $1, email_verified = true, updated_at = now() WHERE id = $2",
-                    google_id, user_id
-                )
-        except Exception as e:
-            import logging
-            logging.getLogger("7s.user_repo").error(f"link_google_account failed: {e}")
-
-    async def create_google_user(self, email: str, google_id: str, full_name: Optional[str] = None, photo_url: Optional[str] = None) -> dict:
-        user_id = uuid.uuid4()
-        user_data = {
-            "id": user_id,
-            "email": email,
-            "google_id": google_id,
-            "phone_number": None,
-            "role": "PASSENGER",
-            "nickname": full_name.split(' ')[0] if full_name else "",
-            "full_name": full_name or "",
-            "photo_url": photo_url,
-            "service_zone": "VOI",
-            "is_profile_complete": False,
-            "email_verified": True,
-            "status": "ACTIVE"
-        }
-        _USERS_MEM_DB[email] = user_data
-
-        pool = await self._get_pool()
-        if not pool:
-            return user_data
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    "INSERT INTO users (id, email, google_id, role, full_name, photo_url, email_verified, is_active, is_profile_complete, service_zone) VALUES ($1, $2, $3, 'PASSENGER', $4, $5, true, true, false, 'VOI')",
-                    user_id, email, google_id, full_name, photo_url
-                )
-                return user_data
-        except Exception as e:
-            import logging
-            logging.getLogger("7s.user_repo").error(f"create_google_user DB insert failed for {email}: {e}")
-            return user_data
 
     async def complete_user_profile(
         self,

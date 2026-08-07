@@ -63,11 +63,11 @@ Runs in this exact order, every time, no exceptions:
 - `payment_status` on `rides` reflects current truth only; `payment_events` is the immutable history.
 - Payment status changes only via a new `payment_events` row plus its database trigger — never edited directly.
 - `refunded = true` requires `payment_status = 'SUCCESS'`, enforced by a database CHECK constraint, not application code alone.
-- No automated refund (no Daraja B2C in V1) — refunds are manual owner action + `REFUND_RECORDED` event + `refunded=true` flag.
+- No automated refund (no BambaStack B2C in V1) — refunds are manual owner action + `REFUND_RECORDED` event + `refunded=true` flag.
 - Only one `SUCCESS` payment event is permitted per ride — a ride cannot accumulate multiple successful payments; this is enforced alongside BR-035's prohibition on further `PAYMENT_ATTEMPT` events after success.
 - Payment method locks once `payment_status = SUCCESS`; corrections after that point are new records, never edits.
 - If no default active payment account is configured, MPESA is unavailable for new rides — only Cash is offered.
-- MPESA STK timeout: **90 seconds [DEFAULT — confirm, matches Daraja's own window]** before querying STK status; treat as failure only if the query also returns nothing.
+- MPESA STK timeout: **90 seconds [DEFAULT — confirm, matches BambaStack's own window]** before querying STK status; treat as failure only if the query also returns nothing.
 - Maximum MPESA retry attempts per ride: **3 [DEFAULT — confirm]** before forcing a cash fallback prompt.
 
 ### BR-011 — Cash Handling

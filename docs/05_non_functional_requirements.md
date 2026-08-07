@@ -16,7 +16,7 @@ Security, Rate Limiting, and Scalability policy. Written before code, so every f
 - Supabase RLS is still your *last line of defense* — every table gets RLS even though the backend is the primary gate. Two locks, not one.
 - Secrets that must never leave the backend `.env`:
   - Supabase **service role** key
-  - Daraja (MPESA) consumer key/secret
+  - BambaStack API key
   - Africa's Talking API key
   - Google Maps API key (if/when adopted) — restrict by backend IP anyway, don't ship it in the Flutter build
 
@@ -26,7 +26,7 @@ Security, Rate Limiting, and Scalability policy. Written before code, so every f
 - GPS coordinates sanity-checked (valid lat/lng ranges, not null-island 0,0 — a common bug signature from denied-permission clients).
 
 ### Payment integrity
-- Daraja callback webhook: verify the request actually originates from Safaricom (IP allowlist if Daraja supports it, plus validate the payload shape) before trusting a "payment success."
+- BambaStack callback webhook: validate payload shape and correlate checkout_request_id before trusting a "payment success."
 - Store the full raw callback (`payment_events.raw_callback`) — this is your evidence of record for disputes, not just the parsed status.
 - Idempotency key on STK push = `ride_id`, so a retried request can't double-charge or double-confirm.
 
@@ -34,7 +34,7 @@ Security, Rate Limiting, and Scalability policy. Written before code, so every f
 Debug/verbose logging is the most common way secrets leak in practice — not through a deliberate mistake, but through someone flipping on verbose logging to chase down a bug and forgetting to scope it. State it explicitly, not just "developers should know better":
 - Never log JWTs or session tokens in full
 - Never log OTP codes, even in debug/dev environments
-- Never log Daraja consumer secrets, API keys, or the raw payment account credentials
+- Never log BambaStack API keys or raw payment account credentials
 - Redact phone numbers in logs where practical (last 4 digits is usually enough for debugging)
 
 ### Data handling
@@ -50,7 +50,7 @@ This protects two different things: your money (paid API calls) and your users (
 
 ### Cost-driving APIs
 - **Routing (OSM/Google)**: cache the distance/ETA result whenever both endpoints are `SYSTEM`/`OWNER` places — a Fare Template match means you already know the fare, so you shouldn't be re-querying routing at all in that path. Only uncached, ad-hoc pin-to-pin requests hit the routing API live.
-- **MPESA STK push**: cap retries per ride (e.g. 3 attempts) before forcing a switch to cash — protects against a passenger (or a bug) hammering Daraja.
+- **MPESA STK push**: cap retries per ride (e.g. 3 attempts) before forcing a switch to cash — protects against a passenger (or a bug) hammering BambaStack.
 - **SMS (Africa's Talking)**: only fired on defined events (login OTP, SOS escalation) — never on a loop a client could trigger repeatedly.
 
 ### Abuse protection

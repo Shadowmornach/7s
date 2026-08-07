@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app.core.config import settings
 from app.schemas.auth import (
-    Token, EmailRegisterRequest, EmailLoginRequest, GoogleLoginRequest,
+    Token, EmailRegisterRequest, EmailLoginRequest,
     CompleteProfileRequest, PasswordResetRequest, UserRole, UserResponse
 )
 from app.services.auth_service import AuthService
@@ -44,19 +44,6 @@ async def login(
             detail=str(e)
         )
 
-
-@router.post("/google", response_model=Token)
-async def google_login(
-    req: GoogleLoginRequest,
-    auth_service: AuthService = Depends(get_auth_service)
-):
-    try:
-        return await auth_service.login_with_google(req.id_token)
-    except RuleViolationError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-        )
 
 @router.post("/profile/complete")
 async def complete_profile(

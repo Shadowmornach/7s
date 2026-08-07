@@ -126,29 +126,6 @@ class SessionCoordinator {
     }
   }
 
-  Future<void> signInWithGoogle({
-    required String idToken,
-    String? email,
-    String? displayName,
-    String? photoUrl,
-  }) async {
-    _state = AuthState.refreshing;
-    try {
-      final session = await _authRepository.signInWithGoogle(
-        idToken: idToken,
-        email: email,
-        displayName: displayName,
-        photoUrl: photoUrl,
-      );
-      _currentSession = session;
-      _state = AuthState.authenticated;
-    } catch (e) {
-      _currentSession = null;
-      _state = AuthState.failed;
-      rethrow;
-    }
-  }
-
   Future<void> completeProfile({
     required String nickname,
     String? fullName,

@@ -124,13 +124,13 @@ CHECK (refunded = false OR payment_status = 'SUCCESS')
 ```
 A refund can only be marked true if the payment actually succeeded.
 
-**No automated refund system in V1.** MPESA STK fires *before* the ride starts (post-fare-acceptance) — if a ride is later cancelled after payment succeeded, the owner manually refunds via his own MPESA app and logs it in Operations Center (`payment_events: REFUND_RECORDED`), then sets `refunded = true`. No Daraja B2C integration, no `REFUND_PENDING` state.
+**No automated refund system in V1.** MPESA STK fires *before* the ride starts (post-fare-acceptance) — if a ride is later cancelled after payment succeeded, the owner manually refunds via his own MPESA app and logs it in Operations Center (`payment_events: REFUND_RECORDED`), then sets `refunded = true`. No BambaStack B2C integration, no `REFUND_PENDING` state.
 
 **Preferred vs. Actual payment method:** passenger selects a *preference* at booking (not a binding method) — `preferred_payment_method`, `actual_payment_method`, `payment_method_changed (boolean)`, `payment_change_reason`. Either party can switch before the ride is marked `SUCCESS`; once `SUCCESS`, the method is locked (corrections happen via new records, not edits).
 
 **Payment accounts:** owner configures MPESA Till/Paybill/Personal once in Settings, marks a default. If no default active payment account is configured, MPESA is unavailable for new rides and only Cash is offered until the owner configures one. STK pushes go automatically to the *passenger's registered phone number* — no manual entry. Override: "Pay with another number" for one-off cases (e.g. paying from a relative's line) — the temporary number is logged on that payment record only, never overwrites the passenger's account.
 
-**MPESA timeout:** query Daraja's STK status before treating a timeout as failure (callbacks can lag). Passenger sees Retry / Switch to Cash on failure.
+**MPESA timeout:** query BambaStack's STK status before treating a timeout as failure (callbacks can lag). Passenger sees Retry / Switch to Cash on failure.
 
 ---
 

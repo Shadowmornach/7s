@@ -44,9 +44,6 @@ class EmailLoginRequest(BaseModel):
     email: EmailStr
     password: str
 
-class GoogleLoginRequest(BaseModel):
-    id_token: str
-
 class CompleteProfileRequest(BaseModel):
     nickname: str
     full_name: Optional[str] = None

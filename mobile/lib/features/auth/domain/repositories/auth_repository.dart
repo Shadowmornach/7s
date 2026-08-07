@@ -11,13 +11,6 @@ abstract class AuthRepository {
     required String password,
   });
 
-  Future<UserSession> signInWithGoogle({
-    required String idToken,
-    String? email,
-    String? displayName,
-    String? photoUrl,
-  });
-
   Future<UserSession> completeProfile({
     required String nickname,
     String? fullName,
