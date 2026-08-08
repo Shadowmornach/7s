@@ -45,8 +45,10 @@ def decode_token(token: str, token_type: str = "access") -> dict:
         raise RuleViolationError("Invalid token.")
 
 # Supabase Auth JWKS Client
-SUPABASE_JWKS_URI = "https://gwrroyzilnjpdntaybpk.supabase.co/auth/v1/.well-known/jwks.json"
-SUPABASE_ISSUER = "https://gwrroyzilnjpdntaybpk.supabase.co/auth/v1"
+SUPABASE_JWKS_URI = settings.SUPABASE_JWKS_URL or "https://gwrroyzilnjpdntaybpk.supabase.co/auth/v1/.well-known/jwks.json"
+SUPABASE_ISSUER = settings.SUPABASE_JWT_ISSUER or "https://gwrroyzilnjpdntaybpk.supabase.co/auth/v1"
+SUPABASE_AUDIENCE = settings.SUPABASE_JWT_AUDIENCE or "authenticated"
+
 jwks_client = jwt.PyJWKClient(SUPABASE_JWKS_URI)
 
 def decode_supabase_token(token: str) -> dict:
@@ -62,7 +64,7 @@ def decode_supabase_token(token: str) -> dict:
             signing_key.key,
             algorithms=["ES256"],
             issuer=SUPABASE_ISSUER,
-            audience="authenticated"
+            audience=SUPABASE_AUDIENCE
         )
         
         sub = payload.get("sub")

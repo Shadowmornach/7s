@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     # External Services
     SUPABASE_URL: Optional[str] = None
+    SUPABASE_ANON_KEY: Optional[SecretStr] = None
+    SUPABASE_JWT_ISSUER: Optional[str] = None
+    SUPABASE_JWKS_URL: Optional[str] = None
+    SUPABASE_JWT_AUDIENCE: Optional[str] = None
+
     ORS_API_KEY: Optional[SecretStr] = None
     AT_USERNAME: Optional[str] = None
     AT_API_KEY: Optional[SecretStr] = None
