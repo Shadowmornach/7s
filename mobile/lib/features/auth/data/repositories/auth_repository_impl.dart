@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_endpoints.dart';
 import '../../../../core/network/api_exceptions.dart';
@@ -64,7 +64,45 @@ class AuthRepositoryImpl implements AuthRepository {
   }) async {
     _logger.info('Auth: [email_signin_started] Email: $email');
 
-    // No try/catch fallback. If backend rejects, exception propagates to UI.
+    try {
+      final supabase = Supabase.instance.client;
+      final authResponse = await supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      final session = authResponse.session;
+      final user = authResponse.user;
+
+      if (session != null && user != null) {
+        await _tokenStorage.writeTokens(
+          AuthTokens(
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken ?? '',
+          ),
+        );
+        final userSession = UserSession(
+          uid: user.id,
+          email: user.email ?? email,
+          nickname: email.split('@')[0],
+          serviceZone: 'VOI',
+          preferredPaymentMethod: 'Cash',
+          favoritePlaces: const [],
+          role: UserSession.parseRole(user.userMetadata?['role']?.toString() ?? 'customer'),
+          isProfileComplete: false,
+          isActive: true,
+          createdAt: DateTime.now().toUtc(),
+          updatedAt: DateTime.now().toUtc(),
+          lastLogin: DateTime.now().toUtc(),
+          expiresAt: DateTime.now().toUtc().add(const Duration(days: 30)),
+        );
+        _cachedSession = userSession;
+        _logger.info('Auth: [supabase_signin_success] UID: ${user.id}');
+        return userSession;
+      }
+    } catch (e) {
+      _logger.warning('Auth: [supabase_signin_failed] $e. Falling back to legacy endpoint.');
+    }
+
     final response = await _apiClient.post(
       ApiEndpoints.authLogin,
       body: {'email': email, 'password': password},
@@ -83,7 +121,45 @@ class AuthRepositoryImpl implements AuthRepository {
   }) async {
     _logger.info('Auth: [email_signup_started] Email: $email');
 
-    // No try/catch fallback. If backend rejects, exception propagates to UI.
+    try {
+      final supabase = Supabase.instance.client;
+      final authResponse = await supabase.auth.signUp(
+        email: email,
+        password: password,
+      );
+      final session = authResponse.session;
+      final user = authResponse.user;
+
+      if (session != null && user != null) {
+        await _tokenStorage.writeTokens(
+          AuthTokens(
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken ?? '',
+          ),
+        );
+        final userSession = UserSession(
+          uid: user.id,
+          email: user.email ?? email,
+          nickname: email.split('@')[0],
+          serviceZone: 'VOI',
+          preferredPaymentMethod: 'Cash',
+          favoritePlaces: const [],
+          role: UserRole.customer,
+          isProfileComplete: false,
+          isActive: true,
+          createdAt: DateTime.now().toUtc(),
+          updatedAt: DateTime.now().toUtc(),
+          lastLogin: DateTime.now().toUtc(),
+          expiresAt: DateTime.now().toUtc().add(const Duration(days: 30)),
+        );
+        _cachedSession = userSession;
+        _logger.info('Auth: [supabase_signup_success] UID: ${user.id}');
+        return userSession;
+      }
+    } catch (e) {
+      _logger.warning('Auth: [supabase_signup_failed] $e. Falling back to legacy endpoint.');
+    }
+
     final response = await _apiClient.post(
       ApiEndpoints.authRegister,
       body: {'email': email, 'password': password},
@@ -147,6 +223,15 @@ class AuthRepositoryImpl implements AuthRepository {
     required String email,
   }) async {
     _logger.info('Auth: [password_reset_request] Email: $email');
+    try {
+      final supabase = Supabase.instance.client;
+      await supabase.auth.resetPasswordForEmail(email);
+      _logger.info('Auth: [supabase_password_reset_sent] Email: $email');
+      return;
+    } catch (e) {
+      _logger.warning('Auth: [supabase_password_reset_failed] $e. Falling back to legacy endpoint.');
+    }
+
     await _apiClient.post(
       ApiEndpoints.authForgotPasswordRequest,
       body: {'email': email},
@@ -259,6 +344,9 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<void> logout() async {
     _logger.info('Auth: [logout_started]');
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (_) {}
     _cachedSession = null;
     await _tokenStorage.clearTokens();
     _logger.info('Auth: [logout_complete]');
